@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.ruff_cache/
+
+# Eigene Daten (Einstellungen, Sounds, Clips, Log) - bleiben lokal
+data/
+
+# Gebaute Dateien
+bin/
+build/
+dist/
+helper/*.ico
+*.obj
+*.res
+
+# Test-Ausgaben
+tools/shots/
+tools/_ref_speech.wav
+tools/_manifest.md5
+
+# alte Diagnose-Skripte (nicht isoliert, koennen hoerbar sein)
+tools/legacy/

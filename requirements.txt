@@ -1,0 +1,7 @@
+PySide6>=6.6
+numpy>=1.26
+scipy>=1.11
+soundfile>=0.12
+keyboard>=0.13.5
+psutil>=5.9
+pyrnnoise>=0.4      # liefert rnnoise.dll (KI-Rauschfilter)
