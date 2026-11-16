@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QHBoxLayout, QLabel, QMainWindow, QMenu, QPushButton,
                                QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
@@ -12,14 +12,38 @@ from .settings_tab import SettingsTab
 from .soundboard_tab import SoundboardTab
 from .sources_tab import SourcesTab
 from .voice_tab import VoiceTab
-from .widgets import app_icon, save_icon_file
+from . import theme
+from .theme import P
+from .widgets import app_icon, brand_pixmap, hard_shadow, save_icon_file
+
+NAV_ICONS = {
+    "soundboard": '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>'
+                  '<rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    "voice": '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+    "clips": '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.6 7.6 20 18M8.6 16.4 20 6"/>',
+    "sources": '<path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/>',
+    "settings": '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1'
+                'M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+}
+
+
+def line_icon(name: str, color: str, size: int = 18):
+    """Schlichtes Linien-Icon (Profi-Design)."""
+    from PySide6.QtGui import QIcon, QPixmap
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{size * 2}" height="{size * 2}" viewBox="0 0 24 24" '
+           f'fill="none" stroke="{color}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">'
+           f'{NAV_ICONS[name]}</svg>')
+    pm = QPixmap()
+    pm.loadFromData(svg.encode("utf-8"), "SVG")
+    return QIcon(pm)
 
 
 class LogoLabel(QLabel):
     def __init__(self):
         super().__init__()
-        self.setPixmap(app_icon().pixmap(34, 34))
-        self.setFixedSize(34, 34)
+        n = 44 if theme.potato() else 34
+        self.setPixmap(brand_pixmap(n * 2).scaled(n, n, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.setFixedSize(n, n)
         self.setStyleSheet("background: transparent;")
 
 
@@ -54,8 +78,8 @@ class MainWindow(QMainWindow):
         brand.addWidget(LogoLabel())
         bt = QVBoxLayout()
         bt.setSpacing(0)
-        name = QLabel("Potato Clips")
-        name.setStyleSheet("font-size: 14pt; font-weight: 700; background: transparent;")
+        name = QLabel("POTATO CLIPS" if theme.potato() else "Potato Clips")
+        name.setObjectName("brand")
         tag = QLabel("Soundboard & Clips")
         tag.setObjectName("sub")
         bt.addWidget(name)
@@ -74,12 +98,19 @@ class MainWindow(QMainWindow):
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         self.nav_buttons = {}
-        for page, text in ((self.soundboard, "🎛   Soundboard"), (self.voice, "🎭   Stimme verändern"),
-                           (self.clips, "✂   Clips && Editor"),
-                           (self.sources, "🎙   Quellen && Aufnahme"), (self.settings, "⚙   Einstellungen")):
+        for page, text, ic in ((self.soundboard, "🎛   Soundboard", "soundboard"),
+                               (self.voice, "🎭   Stimme verändern", "voice"),
+                               (self.clips, "✂   Clips && Editor", "clips"),
+                               (self.sources, "🎙   Quellen && Aufnahme", "sources"),
+                               (self.settings, "⚙   Einstellungen", "settings")):
             self.stack.addWidget(page)
             b = QPushButton(text)
             b.setObjectName("nav")
+            if not theme.potato():
+                b.setIcon(line_icon(ic, P["muted"]))
+                b.setIconSize(QSize(18, 18))
+            else:
+                hard_shadow(b, 4)
             b.setCheckable(True)
             b.setCursor(Qt.PointingHandCursor)
             b.clicked.connect(lambda _=False, w=page: self.show_page(w))
@@ -98,6 +129,10 @@ class MainWindow(QMainWindow):
         self.btn_rec.clicked.connect(lambda: ctl.toggle_recording())
         stop = QPushButton("■  Alle Sounds stoppen")
         stop.setCursor(Qt.PointingHandCursor)
+        if theme.potato():
+            stop.setObjectName("danger")
+            for b in (self.btn_clip, self.btn_rec, stop):
+                hard_shadow(b, 4)
         stop.clicked.connect(ctl.stop_all)
         for b in (self.btn_clip, self.btn_rec, stop):
             sl.addWidget(b)
@@ -149,6 +184,64 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self._tick)
         self.timer.start(500)
         self._tick()
+        ctl.updateFound.connect(self._update_found)
+        if not ctl.cfg.get("setup_done", True):
+            QTimer.singleShot(700, self._first_run)
+
+    def _first_run(self):
+        from .wizard import SetupWizard
+        self.show_normal()
+        SetupWizard(self.ctl, self).exec()
+
+    def _update_found(self, info: dict):
+        from PySide6.QtWidgets import QMessageBox
+        from .. import updater
+        from ..i18n import tr
+        ver = info.get("version", "?")
+        r = QMessageBox.question(self, tr("Update verfügbar"),
+                                 tr("Potato Clips {v} ist da. Jetzt aktualisieren?").format(v=ver))
+        if r != QMessageBox.Yes:
+            return
+        if not (updater.can_self_update() and info.get("url")):
+            import webbrowser
+            webbrowser.open(info.get("page") or updater.PAGE)
+            return
+        self._download_update(info["url"])
+
+    def _download_update(self, url):
+        import threading
+        from PySide6.QtWidgets import QProgressDialog
+        from .. import updater
+        from ..i18n import tr
+        dlg = QProgressDialog(tr("Update wird geladen …"), tr("Abbrechen"), 0, 100, self)
+        dlg.setWindowTitle("Potato Clips")
+        dlg.setMinimumDuration(0)
+        state = {"p": 0.0, "path": None, "err": None}
+
+        def work():
+            try:
+                state["path"] = updater.download(url, lambda f: state.__setitem__("p", f))
+            except Exception as e:
+                state["err"] = str(e)
+        threading.Thread(target=work, daemon=True).start()
+
+        def poll():
+            dlg.setValue(int(state["p"] * 100))
+            if dlg.wasCanceled():
+                t.stop()
+                return
+            if state["err"]:
+                t.stop()
+                dlg.close()
+                self.ctl.toast.emit("Update fehlgeschlagen: " + state["err"], "warn")
+            elif state["path"]:
+                t.stop()
+                dlg.close()
+                updater.run_installer(state["path"])
+                self.quit()
+        t = QTimer(self)
+        t.timeout.connect(poll)
+        t.start(100)
 
     # Kompatibilitaet fuer Tests: win.tabs.setCurrentWidget(...)
     @property
@@ -187,17 +280,18 @@ class MainWindow(QMainWindow):
             self.side_status.setText("⚠ bin\\audiocap.exe fehlt – setup.bat ausführen")
             return
         n = src.running_count()
-        lines = [f"<span style='color:#2ec4b6'>●</span> {n} Quellen laufen",
-                 f"Puffer: letzte {self.ctl.cfg['buffer_seconds']} s"]
+        from ..i18n import tr
+        lines = [f"<span style='color:{P['green']}'>●</span> " + tr(f"{n} Quellen laufen"),
+                 tr(f"Puffer: letzte {self.ctl.cfg['buffer_seconds']} s")]
         hk = self.ctl.hotkey_text("clip")
         if hk:
-            lines.append(f"Clip-Hotkey: {hk}")
+            lines.append(tr(f"Clip-Hotkey: {hk}"))
         if self.ctl.cfg["voice_enabled"]:
             from ..effects import voice_name
-            lines.append(f"<span style='color:#b9a8ff'>🎭 {voice_name(self.ctl.cfg['voice_preset'])}</span>")
+            lines.append(f"<span style='color:{P['accent']}'>" + tr(voice_name(self.ctl.cfg['voice_preset'])) + "</span>")
         if src.recording:
             t = int(src.recording_seconds())
-            lines.insert(0, f"<span style='color:#ff4d6d'><b>● REC {t // 60}:{t % 60:02d}</b></span>")
+            lines.insert(0, f"<span style='color:{P['red']}'><b>● REC {t // 60}:{t % 60:02d}</b></span>")
         self.side_status.setText("<br>".join(lines))
 
     def show_normal(self):

@@ -67,13 +67,17 @@ def main() -> int:
         if ln and not payload:
             return 0
         if typ == 2:
-            parts = payload.decode("utf-8", "replace").split()
+            parts = payload.decode("utf-8", "replace").split(" ", 3)
             key = parts[1] if len(parts) > 1 and parts[1] != "-" else ""
             try:
                 amount = float(parts[2]) if len(parts) > 2 else 0.5
             except ValueError:
                 amount = 0.5
             try:
+                if key.startswith("custom_") and len(parts) > 3:
+                    import json
+                    from .effects import register_custom
+                    register_custom(key, "", "", json.loads(parts[3]))
                 vc.set(key, amount)
             except Exception:
                 vc.set("", 0)

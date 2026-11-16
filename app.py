@@ -12,13 +12,14 @@ if __name__ == "__main__" and "--fxworker" in sys.argv:
     sys.exit(_fx_main())
 
 import logging
+import os
+import time
 import traceback
 
-from PySide6.QtCore import Qt
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from soundclip.config import LOG_FILE
+from soundclip.config import ASSETS_DIR, LOG_FILE, Config
 
 INSTANCE_KEY = "PotatoClips-single-instance"
 
@@ -32,9 +33,44 @@ def setup_logging():
     )
 
 
+def _wait_for_old_instance():
+    """Nach einem Neustart (Design/Sprache gewechselt) warten, bis die alte Instanz zu ist."""
+    if "--wait-pid" not in sys.argv:
+        return
+    try:
+        pid = int(sys.argv[sys.argv.index("--wait-pid") + 1])
+        import psutil
+        t0 = time.time()
+        while psutil.pid_exists(pid) and time.time() - t0 < 12:
+            time.sleep(0.15)
+    except Exception:
+        pass
+
+
+def _setup_look(app):
+    """Design und Sprache aus den Einstellungen setzen, BEVOR die Oberflaeche gebaut wird."""
+    from PySide6.QtCore import QLocale
+    from PySide6.QtGui import QFontDatabase
+    from soundclip import i18n
+    from soundclip.ui import theme
+    cfg = Config()
+    mode = cfg.get("ui_theme", "pro")
+    lang = cfg.get("language", "auto")
+    if lang not in ("de", "en"):
+        lang = "de" if QLocale.system().language() == QLocale.German else "en"
+    theme.set_mode(mode)
+    i18n.setup(lang, mode)
+    fonts = ASSETS_DIR / "fonts"
+    if fonts.exists():
+        for f in fonts.glob("*.ttf"):
+            QFontDatabase.addApplicationFont(str(f))
+    i18n.install(app)
+
+
 def main():
     setup_logging()
     log = logging.getLogger("soundclip")
+    _wait_for_old_instance()
 
     try:  # eigenes Taskleisten-Symbol statt Python-Symbol
         import ctypes
@@ -44,6 +80,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("Potato Clips")
+    _setup_look(app)
     app.setQuitOnLastWindowClosed(False)
 
     # nur eine Instanz: zweite Instanz holt das Fenster nach vorne

@@ -55,6 +55,8 @@ Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "--mi
 [Run]
 Filename: "https://vb-audio.com/Cable/"; Description: "VB-Cable herunterladen (damit Freunde in Discord deine Sounds hören)"; Flags: shellexec postinstall skipifsilent nowait unchecked; Check: not CableInstalled
 Filename: "{app}\{#AppExe}"; Description: "Potato Clips jetzt starten"; Flags: nowait postinstall skipifsilent
+; nach einem automatischen Update (leise Installation) direkt wieder starten
+Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/f /im {#AppExe}"; Flags: runhidden; RunOnceId: "KillApp"

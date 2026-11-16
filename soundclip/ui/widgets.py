@@ -12,101 +12,143 @@ from PySide6.QtWidgets import (QCheckBox, QFrame, QHBoxLayout, QKeySequenceEdit,
 
 from ..hotkeys import combo_to_qt, qt_to_combo
 
-ACCENT = "#7c5cff"
-ACCENT2 = "#ff5c8a"
-RED = "#ff4d6d"
-GREEN = "#2ec4b6"
-BG = "#0f1015"
-SIDEBAR = "#14151c"
-PANEL = "#181a22"
-PANEL2 = "#20232d"
-BORDER = "#272a36"
-TEXT = "#ececf3"
-MUTED = "#8b8fa3"
+from . import theme
+from .theme import P
+
+ACCENT = P["accent"]
+ACCENT2 = P["accent_hover"]
+RED = P["red"]
+GREEN = P["green"]
+BG = P["bg"]
+SIDEBAR = P["sidebar"]
+PANEL = P["panel"]
+PANEL2 = P["panel2"]
+BORDER = P["border"]
+TEXT = P["text"]
+MUTED = P["muted"]
 
 ASSETS = (Path(__file__).resolve().parent / "assets").as_posix()
 
-STYLE = f"""
-* {{ font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 10pt; color: {TEXT}; }}
-QMainWindow, QDialog {{ background: {BG}; }}
-QWidget#page {{ background: {BG}; }}
-QWidget#sidebar {{ background: {SIDEBAR}; border-right: 1px solid {BORDER}; }}
-QPushButton#nav {{ text-align: left; padding: 11px 14px; border: none; border-radius: 10px; background: transparent;
-    color: {MUTED}; font-size: 10.5pt; font-weight: 600; }}
-QPushButton#nav:hover {{ background: #1d1f29; color: {TEXT}; }}
-QPushButton#nav:checked {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3a2f7a, stop:1 #2a2550);
-    color: white; }}
-QFrame#card {{ background: {PANEL}; border: 1px solid {BORDER}; border-radius: 14px; }}
-QFrame#card:hover {{ border-color: #363a4b; }}
+
+def build_style() -> str:
+    """Stylesheet fuer das aktive Design (theme.MODE)."""
+    c = dict(P)
+    pot = theme.potato()
+    bw = 3 if pot else 1                 # Rahmenbreite
+    r = 0 if pot else 8                  # Ecken
+    rc = 0 if pot else 12                # Ecken grosser Flaechen
+    font = "'Comic Neue', 'Comic Sans MS'" if pot else "'Inter', 'Segoe UI Variable Text', 'Segoe UI'"
+    head = "'Bungee', 'Comic Neue'" if pot else "'Inter', 'Segoe UI'"
+    weight = 700 if pot else 400
+    btn_hover = "#3DE8FF" if pot else c["panel_hover"]
+    nav_checked = (f"background: {c['accent']}; color: #111; border: 3px solid #111;" if pot else
+                   f"background: {c['panel_hover']}; color: {c['text']}; border-left: 2px solid {c['accent']};")
+    nav_idle = ("background: #FFFFFF; border: 3px solid #111; color: #111;" if pot else
+                f"background: transparent; border: none; border-left: 2px solid transparent; color: {c['muted']};")
+    return f"""
+* {{ font-family: {font}; font-size: 10pt; font-weight: {weight}; color: {c['text']}; }}
+QMainWindow, QDialog {{ background: {c['bg']}; }}
+QWidget#page {{ background: {c['bg']}; }}
+QWidget#sidebar {{ background: {c['sidebar']}; border-right: {bw}px solid {c['border']}; }}
+QPushButton#nav {{ text-align: left; padding: 10px 12px; border-radius: {r}px; {nav_idle}
+    font-size: 10.5pt; font-weight: {700 if pot else 500}; }}
+QPushButton#nav:hover {{ background: {btn_hover}; color: {c['text']}; }}
+QPushButton#nav:checked {{ {nav_checked} font-weight: 700; }}
+QFrame#card {{ background: {c['panel']}; border: {bw}px solid {c['border']}; border-radius: {rc}px; }}
+QFrame#card:hover {{ border-color: {'#111' if pot else c['border2']}; }}
 QFrame#card QLabel {{ background: transparent; }}
-QPushButton {{ background: {PANEL2}; border: 1px solid #2f3340; border-radius: 9px; padding: 8px 15px; font-weight: 500; }}
-QPushButton:hover {{ background: #2a2e3c; border-color: {ACCENT}; }}
-QPushButton:pressed {{ background: #323648; }}
-QPushButton:disabled {{ color: #5a5e6e; border-color: #23252e; background: #1a1c23; }}
-QPushButton#accent {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #8b6cff, stop:1 #6a4cf0);
-    border: none; color: white; font-weight: 600; }}
-QPushButton#accent:hover {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #9a7fff, stop:1 #7a5cff); }}
-QPushButton#danger {{ background: #2c1820; border-color: #5a2433; color: #ffc2cf; }}
-QPushButton#danger:hover {{ border-color: {RED}; }}
-QPushButton#rec {{ background: #2c1820; border-color: #5a2433; color: #ffc2cf; font-weight: 600; }}
-QPushButton#rec:hover {{ border-color: {RED}; }}
-QPushButton#rec[recording="true"] {{ background: {RED}; border-color: {RED}; color: white; }}
-QPushButton#round {{ border-radius: 16px; padding: 0; min-width: 32px; max-width: 32px; min-height: 32px; max-height: 32px; }}
+QFrame#section {{ background: {c['panel']}; border: {bw}px solid {c['border']}; border-radius: {rc}px; }}
+QFrame#section QLabel, QFrame#row QLabel {{ background: transparent; }}
+QFrame#row {{ background: transparent; border: none; border-top: {1 if not pot else 2}px solid {c['border']}; }}
+QPushButton {{ background: {c['panel2']}; border: {bw}px solid {c['border2']}; border-radius: {r}px; padding: 7px 14px;
+    font-weight: {700 if pot else 500}; }}
+QPushButton:hover {{ background: {btn_hover}; border-color: {c['accent'] if not pot else '#111'}; }}
+QPushButton:pressed {{ background: {c['sel']}; }}
+QPushButton:checked {{ background: {c['accent'] if pot else c['panel_hover']}; border-color: {'#111' if pot else c['accent']}; }}
+QPushButton:disabled {{ color: {c['muted']}; border-color: {c['border']}; background: {c['panel']}; }}
+QPushButton#accent {{ background: {c['accent']}; border: {bw}px solid {'#111' if pot else c['accent']}; color: {c['accent_text']};
+    font-weight: 700; }}
+QPushButton#accent:hover {{ background: {c['accent_hover']}; }}
+QPushButton#danger, QPushButton#rec {{ background: {c['danger_bg']}; border: {bw}px solid {c['danger_border']};
+    color: {c['danger_text']}; font-weight: 700; }}
+QPushButton#danger:hover, QPushButton#rec:hover {{ border-color: {c['red'] if not pot else '#111'}; }}
+QPushButton#rec[recording="true"] {{ background: {c['red']}; border-color: {c['red'] if not pot else '#111'}; color: white; }}
+QPushButton#round {{ border-radius: {0 if pot else 16}px; padding: 0; min-width: 32px; max-width: 32px; min-height: 32px; max-height: 32px; }}
+QPushButton#addtile {{ border: {2 if not pot else 3}px dashed {c['border2'] if not pot else '#111'}; border-radius: {rc}px;
+    background: transparent; color: {c['muted']}; font-weight: 700; }}
+QPushButton#addtile:hover {{ border-color: {c['accent'] if not pot else '#111'}; color: {c['text']}; background: {btn_hover}; }}
+QPushButton#seg {{ border-radius: {r}px; padding: 6px 12px; }}
+QPushButton#seg:checked {{ background: {c['accent'] if pot else c['border2']}; color: {'#111' if pot else c['text']};
+    border-color: {'#111' if pot else c['border2']}; font-weight: 700; }}
+QPushButton#themecard {{ text-align: left; padding: 12px 14px; border-radius: {rc}px; }}
+QPushButton#themecard:checked {{ border: {bw + (2 if pot else 0)}px solid {'#111' if pot else c['accent']};
+    background: {c['accent'] if pot else c['accent_soft']}; }}
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QKeySequenceEdit, QPlainTextEdit {{
-    background: {PANEL2}; border: 1px solid #2f3340; border-radius: 8px; padding: 6px 10px; selection-background-color: {ACCENT}; }}
-QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QKeySequenceEdit:focus {{ border-color: {ACCENT}; }}
+    background: {c['panel2']}; border: {bw}px solid {c['border2']}; border-radius: {r}px; padding: 6px 10px;
+    selection-background-color: {c['accent']}; selection-color: {c['accent_text']}; }}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QKeySequenceEdit:focus, QPlainTextEdit:focus {{ border-color: {c['accent'] if not pot else '#FF3D8B'}; }}
 QComboBox::drop-down {{ border: none; width: 28px; }}
 QComboBox::down-arrow {{ image: url("{ASSETS}/chevron.svg"); width: 12px; height: 12px; }}
-QComboBox QAbstractItemView {{ background: {PANEL2}; border: 1px solid #2f3340; border-radius: 8px; padding: 4px;
-    selection-background-color: {ACCENT}; outline: none; }}
+QComboBox QAbstractItemView {{ background: {c['panel2']}; border: {bw}px solid {c['border2']}; border-radius: {r}px; padding: 4px;
+    selection-background-color: {c['accent']}; selection-color: {c['accent_text']}; outline: none; }}
 QSpinBox::up-button, QSpinBox::down-button {{ border: none; width: 18px; background: transparent; }}
 QSpinBox::up-arrow {{ image: url("{ASSETS}/up.svg"); width: 10px; height: 10px; }}
 QSpinBox::down-arrow {{ image: url("{ASSETS}/down.svg"); width: 10px; height: 10px; }}
-QListWidget {{ background: {PANEL}; border: 1px solid {BORDER}; border-radius: 12px; outline: none; padding: 4px; }}
-QListWidget::item {{ padding: 9px 8px; border-radius: 8px; margin: 1px 0; }}
-QListWidget::item:hover {{ background: #1f2129; }}
-QListWidget::item:selected {{ background: #2e2858; color: white; }}
-QGroupBox {{ background: {PANEL}; border: 1px solid {BORDER}; border-radius: 14px; margin-top: 16px;
-    padding: 18px 14px 12px 14px; font-weight: 600; }}
-QGroupBox::title {{ subcontrol-origin: margin; left: 14px; padding: 0 6px; color: {MUTED}; }}
-QGroupBox QLabel, QGroupBox QCheckBox, QGroupBox QRadioButton {{ font-weight: 400; background: transparent; }}
+QListWidget {{ background: {c['panel']}; border: {bw}px solid {c['border']}; border-radius: {rc}px; outline: none; padding: 4px; }}
+QListWidget::item {{ padding: 9px 8px; border-radius: {r}px; margin: 1px 0; }}
+QListWidget::item:hover {{ background: {c['panel_hover']}; }}
+QListWidget::item:selected {{ background: {c['sel']}; color: {c['text']}; }}
+QGroupBox {{ background: {c['panel']}; border: {bw}px solid {c['border']}; border-radius: {rc}px; margin-top: 16px;
+    padding: 18px 14px 12px 14px; font-weight: 700; }}
+QGroupBox::title {{ subcontrol-origin: margin; left: 14px; padding: 0 6px; color: {c['muted']}; }}
+QGroupBox QLabel, QGroupBox QCheckBox, QGroupBox QRadioButton {{ background: transparent; }}
 QCheckBox, QRadioButton {{ spacing: 9px; background: transparent; }}
-QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 5px; border: 2px solid #4a4f63; background: {PANEL2}; }}
-QCheckBox::indicator:hover {{ border-color: {ACCENT}; }}
-QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; image: url("{ASSETS}/check.svg"); }}
-QCheckBox::indicator:disabled {{ border-color: #2f3340; background: #1a1c22; }}
-QCheckBox::indicator:checked:disabled {{ background: #3f3577; border-color: #3f3577; }}
-QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 9px; border: 2px solid #4a4f63; background: {PANEL2}; }}
-QRadioButton::indicator:hover {{ border-color: {ACCENT}; }}
-QRadioButton::indicator:checked {{ width: 8px; height: 8px; border: 5px solid {ACCENT}; background: white; }}
-QSlider::groove:horizontal {{ height: 5px; background: #2b2f3c; border-radius: 2px; }}
-QSlider::sub-page:horizontal {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6a4cf0, stop:1 #9a7fff);
-    border-radius: 2px; }}
-QSlider::handle:horizontal {{ background: white; width: 16px; height: 16px; margin: -6px 0; border-radius: 8px;
-    border: 3px solid {ACCENT}; }}
+QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: {0 if pot else 5}px; border: 2px solid {c['border2'] if not pot else '#111'}; background: {c['panel2']}; }}
+QCheckBox::indicator:hover {{ border-color: {c['accent']}; }}
+QCheckBox::indicator:checked {{ background: {c['accent']}; border-color: {c['accent'] if not pot else '#111'}; image: url("{ASSETS}/check.svg"); }}
+QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 9px; border: 2px solid {c['border2'] if not pot else '#111'}; background: {c['panel2']}; }}
+QRadioButton::indicator:checked {{ width: 8px; height: 8px; border: 5px solid {c['accent']}; background: white; }}
+QSlider::groove:horizontal {{ height: {8 if pot else 4}px; background: {c['groove']}; border-radius: {0 if pot else 2}px;
+    border: {2 if pot else 0}px solid #111; }}
+QSlider::sub-page:horizontal {{ background: {c['accent']}; border-radius: {0 if pot else 2}px; border: {2 if pot else 0}px solid #111; }}
+QSlider::handle:horizontal {{ background: {'#111' if pot else c['accent']}; width: {18 if pot else 14}px; height: 14px;
+    margin: {-6 if pot else -5}px 0; border-radius: {0 if pot else 7}px; border: {2 if pot else 2}px solid {'#111' if pot else c['bg']}; }}
 QScrollArea {{ border: none; background: transparent; }}
 QScrollArea > QWidget > QWidget {{ background: transparent; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
-QScrollBar::handle:vertical {{ background: #333748; border-radius: 4px; min-height: 30px; }}
-QScrollBar::handle:vertical:hover {{ background: #454a5e; }}
+QScrollBar::handle:vertical {{ background: {c['border2'] if not pot else '#111'}; border-radius: {0 if pot else 4}px; min-height: 30px; }}
 QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
-QScrollBar::handle:horizontal {{ background: #333748; border-radius: 4px; min-width: 30px; }}
+QScrollBar::handle:horizontal {{ background: {c['border2'] if not pot else '#111'}; border-radius: {0 if pot else 4}px; min-width: 30px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
-QToolButton {{ background: {PANEL2}; border: 1px solid #2f3340; border-radius: 7px; padding: 4px 8px; }}
-QToolButton:hover {{ border-color: {ACCENT}; }}
-QLabel#muted {{ color: {MUTED}; background: transparent; }}
-QLabel#h1 {{ font-size: 17pt; font-weight: 700; background: transparent; }}
-QLabel#h2 {{ font-size: 11pt; font-weight: 600; background: transparent; }}
-QLabel#sub {{ color: {MUTED}; font-size: 9.5pt; background: transparent; }}
+QToolButton {{ background: {c['panel2']}; border: {bw}px solid {c['border2']}; border-radius: {r}px; padding: 4px 8px; }}
+QToolButton:hover {{ border-color: {c['accent'] if not pot else '#111'}; background: {btn_hover}; }}
+QLabel#muted {{ color: {c['muted']}; background: transparent; }}
+QLabel#h1 {{ font-family: {head}; font-size: {22 if pot else 17}pt; font-weight: 700; background: transparent; }}
+QLabel#h2 {{ font-family: {head}; font-size: {13 if pot else 11}pt; font-weight: 700; background: transparent; }}
+QLabel#sub {{ color: {c['muted']}; font-size: 9.5pt; background: transparent; }}
+QLabel#brand {{ font-family: {head}; font-size: {13 if pot else 13}pt; font-weight: 700; background: transparent; }}
+QLabel#chip_ok {{ background: {'#B6FF3B' if pot else '#12201D'}; border: {bw}px solid {'#111' if pot else '#1F3A33'};
+    border-radius: {r}px; padding: 7px 10px; color: {c['text']}; }}
+QLabel#chip_bad {{ background: {'#FF8A1F' if pot else '#2A1517'}; border: {bw}px solid {'#111' if pot else '#5A2A2E'};
+    border-radius: {r}px; padding: 7px 10px; color: {c['text']}; }}
+QLabel#kbd {{ font-family: 'Cascadia Mono', Consolas, monospace; background: {c['panel2']}; border: 1px solid {c['border2']};
+    border-radius: 4px; padding: 1px 6px; }}
+QFrame#hintbox {{ background: {c['hint_bg']}; border: {bw}px solid {c['hint_border']}; border-radius: {r + 2}px; }}
+QFrame#hintbox QLabel {{ background: transparent; color: {c['hint_text']}; }}
+QLabel#intruder {{ background: {c['danger_bg']}; border: {bw}px solid {c['danger_border'] if not pot else '#111'};
+    border-radius: {r + 2}px; padding: 8px 12px; color: {c['danger_text']}; }}
 QSplitter::handle {{ background: transparent; }}
-QMenu {{ background: {PANEL2}; border: 1px solid #2f3340; border-radius: 10px; padding: 6px; }}
-QMenu::item {{ padding: 7px 22px; border-radius: 6px; }}
-QMenu::item:selected {{ background: {ACCENT}; }}
-QMenu::separator {{ height: 1px; background: #2f3340; margin: 4px 8px; }}
-QToolTip {{ background: {PANEL2}; color: {TEXT}; border: 1px solid #2f3340; padding: 6px; border-radius: 6px; }}
-QMessageBox, QInputDialog {{ background: {BG}; }}
+QMenu {{ background: {c['panel2']}; border: {bw}px solid {c['border2']}; border-radius: {r + 2}px; padding: 6px; }}
+QMenu::item {{ padding: 7px 22px; border-radius: {r}px; }}
+QMenu::item:selected {{ background: {c['accent']}; color: {c['accent_text']}; }}
+QMenu::separator {{ height: 1px; background: {c['border2']}; margin: 4px 8px; }}
+QToolTip {{ background: {c['panel2']}; color: {c['text']}; border: 1px solid {c['border2']}; padding: 6px; border-radius: 6px; }}
+QMessageBox, QInputDialog {{ background: {c['bg']}; }}
 """
+
+
+STYLE = build_style()
 
 
 class ToggleSwitch(QCheckBox):
@@ -156,30 +198,112 @@ class ToggleSwitch(QCheckBox):
         p.setRenderHint(QPainter.Antialiasing)
         h = 22
         y = (self.height() - h) / 2
-        track = QRectF(1, y, 40, h)
-        off = QColor("#2f3342")
-        on = QColor(ACCENT)
+        track = QRectF(1.5, y, 40, h)
+        pot = theme.potato()
+        off = QColor(P["toggle_off"])
+        on = QColor(P["accent"] if not pot else "#B6FF3B")
         if not self.isEnabled():
-            off, on = QColor("#23252e"), QColor("#3f3577")
+            off, on = QColor(P["panel"]), QColor(P["border2"])
         c = QColor(int(off.red() + (on.red() - off.red()) * self._pos),
                    int(off.green() + (on.green() - off.green()) * self._pos),
                    int(off.blue() + (on.blue() - off.blue()) * self._pos))
-        p.setPen(Qt.NoPen)
         p.setBrush(c)
-        p.drawRoundedRect(track, h / 2, h / 2)
         r = h - 6
         x = track.left() + 3 + (track.width() - r - 6) * self._pos
-        p.setBrush(QColor("white") if self.isEnabled() else QColor("#8b8fa3"))
-        p.drawEllipse(QRectF(x, y + 3, r, r))
+        if pot:
+            p.setPen(QPen(QColor("#111"), 2.5))
+            p.drawRect(track)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor("#111"))
+            p.drawRect(QRectF(x, y + 3, r, r))
+        else:
+            p.setPen(Qt.NoPen)
+            p.drawRoundedRect(track, h / 2, h / 2)
+            p.setBrush(QColor(P["accent_text"]) if self._pos > 0.5 else QColor("#E8EAED"))
+            if not self.isEnabled():
+                p.setBrush(QColor(P["muted"]))
+            p.drawEllipse(QRectF(x, y + 3, r, r))
         if self.text():
             p.setPen(QColor(TEXT) if self.isEnabled() else QColor(MUTED))
             p.drawText(QRectF(52, 0, self.width() - 52, self.height()), Qt.AlignVCenter | Qt.AlignLeft, self.text())
 
 
+def hard_shadow(w, dist: int = 6):
+    """Potato-Modus: harter schwarzer Schatten (wie gedruckt)."""
+    if not theme.potato():
+        return w
+    from PySide6.QtWidgets import QGraphicsDropShadowEffect
+    eff = QGraphicsDropShadowEffect(w)
+    eff.setBlurRadius(0)
+    eff.setOffset(dist, dist)
+    eff.setColor(QColor("#111111"))
+    w.setGraphicsEffect(eff)
+    return w
+
+
 def card(parent=None) -> QFrame:
     f = QFrame(parent)
     f.setObjectName("card")
+    hard_shadow(f)
     return f
+
+
+def brand_pixmap(size: int) -> QPixmap:
+    """Logo im Design: Profi = Kartoffel auf Gold, Potato = Kartoffel mit Glubschaugen."""
+    if not theme.potato():
+        pm = QPixmap(size, size)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+        s = float(size)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(P["accent"]))
+        p.drawRoundedRect(QRectF(0, 0, s, s), s * 0.25, s * 0.25)
+        path = QPainterPath()
+        path.addEllipse(QRectF(s * 0.24, s * 0.28, s * 0.54, s * 0.44))
+        p.save()
+        p.translate(s / 2, s / 2)
+        p.rotate(-25)
+        p.translate(-s / 2, -s / 2)
+        p.setBrush(QColor(P["accent_text"]))
+        p.drawPath(path)
+        p.setBrush(QColor(P["accent"]))
+        for ex, ey, rr in ((0.42, 0.45, 0.035), (0.58, 0.52, 0.035), (0.48, 0.6, 0.028)):
+            p.drawEllipse(QRectF(s * (ex - rr), s * (ey - rr), s * rr * 2, s * rr * 2))
+        p.restore()
+        p.end()
+        return pm
+    pm = QPixmap(size, size)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    k = size / 64.0
+    p.scale(k, k)
+    body = QPainterPath()
+    body.moveTo(10, 36)
+    body.cubicTo(10, 22, 19, 10, 33, 10)
+    body.cubicTo(46, 10, 54, 19, 54, 30)
+    body.cubicTo(54, 45, 44, 56, 29, 56)
+    body.cubicTo(17, 56, 10, 48, 10, 36)
+    p.setPen(QPen(QColor("#111"), 3))
+    p.setBrush(QColor("#D9A15B"))
+    p.drawPath(body)
+    p.setPen(QPen(QColor("#111"), 2.5))
+    p.setBrush(QColor("white"))
+    p.drawEllipse(QRectF(19, 23, 14, 14))
+    p.drawEllipse(QRectF(37, 23, 10, 10))
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor("#111"))
+    p.drawEllipse(QRectF(25, 29, 6, 6))
+    p.drawEllipse(QRectF(39, 25, 4, 4))
+    p.setPen(QPen(QColor("#111"), 3, Qt.SolidLine, Qt.RoundCap))
+    p.setBrush(Qt.NoBrush)
+    mouth = QPainterPath()
+    mouth.moveTo(27, 44)
+    mouth.cubicTo(31, 48, 37, 48, 41, 43)
+    p.drawPath(mouth)
+    p.end()
+    return pm
 
 
 def save_icon_file(path) -> None:
@@ -272,7 +396,7 @@ class LevelMeter(QWidget):
         self.level = 0.0
         self.setMinimumSize(80, 10)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setFixedHeight(10)
+        self.setFixedHeight(16 if theme.potato() else 10)
 
     def push(self, peak: float):
         # dB-Skala, damit leise Stimmen sichtbar sind
@@ -285,14 +409,26 @@ class LevelMeter(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        if theme.potato():
+            n = 14
+            gap = 3.0
+            bw = (r.width() - gap * (n - 1)) / n
+            lit = int(round(self.level * n))
+            for i in range(n):
+                cell = QRectF(r.left() + i * (bw + gap), r.top(), bw, r.height())
+                col = "#B6FF3B" if i < n * 0.6 else ("#FF8A1F" if i < n * 0.85 else "#FF3D8B")
+                p.setPen(QPen(QColor("#111"), 1.5))
+                p.setBrush(QColor(col) if i < lit else QColor("white"))
+                p.drawRect(cell)
+            return
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#2a2d38"))
+        p.setBrush(QColor(P["meter_bg"]))
         p.drawRoundedRect(r, 4, 4)
         if self.level > 0.01:
             w = r.width() * self.level
             g = QLinearGradient(r.left(), 0, r.right(), 0)
             g.setColorAt(0, QColor(GREEN))
-            g.setColorAt(0.75, QColor("#ffd166"))
+            g.setColorAt(0.75, QColor(P["warn"]))
             g.setColorAt(1, QColor(RED))
             p.setBrush(QBrush(g))
             p.drawRoundedRect(QRectF(r.left(), r.top(), w, r.height()), 4, 4)
@@ -345,12 +481,18 @@ class WaveformView(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         r = self.rect()
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor(PANEL))
-        p.drawRoundedRect(QRectF(r), 10, 10)
+        from ..i18n import tr
+        if theme.potato():
+            p.setPen(QPen(QColor("#111"), 3))
+            p.setBrush(QColor("white"))
+            p.drawRect(QRectF(r).adjusted(1.5, 1.5, -1.5, -1.5))
+        else:
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(PANEL))
+            p.drawRoundedRect(QRectF(r), 10, 10)
         if not len(self.peaks) or not self.duration:
             p.setPen(QColor(MUTED))
-            p.drawText(r, Qt.AlignCenter, "Kein Audio ausgewählt")
+            p.drawText(r, Qt.AlignCenter, tr("Kein Audio ausgewählt"))
             return
         mid = r.height() / 2
         h = r.height() / 2 - 12
@@ -365,10 +507,10 @@ class WaveformView(QWidget):
             v = self.peaks[min(k, n - 1)] / mx
             x = 8 + i
             inside = sx <= x <= ex
-            p.setPen(QColor(ACCENT) if inside else QColor("#3a3d4c"))
+            p.setPen(QColor(ACCENT) if inside else QColor(P["wave_off"]))
             p.drawLine(int(x), int(mid - v * h), int(x), int(mid + v * h))
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor(0, 0, 0, 90))
+        p.setBrush(QColor(0, 0, 0, 40 if theme.potato() else 90))
         p.drawRect(QRectF(8, 0, max(0, sx - 8), r.height()))
         p.drawRect(QRectF(ex, 0, max(0, r.width() - 8 - ex), r.height()))
         for x, col in ((sx, GREEN), (ex, RED)):
@@ -379,7 +521,7 @@ class WaveformView(QWidget):
             p.drawRoundedRect(QRectF(x - 5, 2, 10, 14), 3, 3)
         if self.playhead >= 0:
             x = self._x(self.start + self.playhead)
-            p.setPen(QPen(QColor("white"), 1.5))
+            p.setPen(QPen(QColor(P["text"]), 1.5))
             p.drawLine(int(x), 0, int(x), r.height())
         p.setPen(QColor(MUTED))
         f = QFont(self.font())
@@ -388,7 +530,8 @@ class WaveformView(QWidget):
         p.drawText(QRect(12, r.height() - 18, 200, 16), Qt.AlignLeft, f"{self.start:.2f}s")
         p.drawText(QRect(r.width() - 212, r.height() - 18, 200, 16), Qt.AlignRight, f"{self.end:.2f}s")
         p.drawText(QRect(0, r.height() - 18, r.width(), 16), Qt.AlignCenter,
-                   f"Auswahl: {max(0, self.end - self.start):.2f}s von {self.duration:.1f}s")
+                   tr("Auswahl: {a}s von {b}s").format(a=f"{max(0, self.end - self.start):.2f}",
+                                                       b=f"{self.duration:.1f}"))
 
     def mousePressEvent(self, e):
         if not self.duration:

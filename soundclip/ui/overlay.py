@@ -4,12 +4,14 @@ from __future__ import annotations
 import time
 
 from PySide6.QtCore import QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QGuiApplication, QPainter
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QGuiApplication, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
+from . import theme
+from .theme import P
 from .widgets import ACCENT, GREEN, RED
 
-KIND_COLORS = {"ok": GREEN, "rec": RED, "warn": "#ffb703", "info": ACCENT}
+KIND_COLORS = {"ok": GREEN, "rec": RED, "warn": P["warn"], "info": ACCENT}
 
 
 class Overlay(QWidget):
@@ -72,21 +74,21 @@ class Overlay(QWidget):
             blink = int(time.time() * 2) % 2 == 0
             lines.append((("● " if blink else "○ ") + f"REC {t // 60}:{t % 60:02d}", RED))
         n_src = src.running_count()
-        status = f"Potato Clips · {n_src} Quelle(n) · Clip {self.ctl.cfg['buffer_seconds']}s"
-        if self.ctl.cfg["mic_passthrough"]:
-            status += " · 🎙"
-        lines.append((status, "#c9c9d6"))
+        from ..i18n import tr
+        status = tr(f"Potato Clips · {n_src} Quelle(n) · Clip {self.ctl.cfg['buffer_seconds']}s")
+        lines.append((status, P["overlay_text"]))
         if self.ctl.cfg["voice_enabled"]:
             from ..effects import voice_name
-            lines.append((f"🎭 Stimme: {voice_name(self.ctl.cfg['voice_preset'])} · "
-                          f"{int(self.ctl.voice_amount() * 100)} %", "#b9a8ff"))
+            lines.append((tr(f"Stimme: {tr(voice_name(self.ctl.cfg['voice_preset']))} · "
+                             f"{int(self.ctl.voice_amount() * 100)} %"), ACCENT))
         for v in playing[:3]:
             if v.sound_id != "__preview__":
                 lines.append(("▶ " + v.name, ACCENT))
         for _t0, text, kind in self.toasts[-3:]:
-            lines.append((text, KIND_COLORS.get(kind, ACCENT)))
+            lines.append((tr(text), KIND_COLORS.get(kind, ACCENT)))
 
-        f = QFont("Segoe UI", 9)
+        pot = theme.potato()
+        f = QFont("Comic Neue" if pot else "Inter", 9)
         f.setBold(True)
         p.setFont(f)
         fm = QFontMetrics(f)
@@ -98,11 +100,24 @@ class Overlay(QWidget):
             w = fm.horizontalAdvance(text) + 24
             x = self.width() - 2 - w if right else 2
             r = QRectF(x, y, w, lh - 4)
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor(15, 16, 22, 215))
-            p.drawRoundedRect(r, 8, 8)
-            p.setBrush(QColor(col))
-            p.drawRoundedRect(QRectF(x, y, 4, lh - 4), 2, 2)
-            p.setPen(QColor(col) if col != "#c9c9d6" else QColor("#c9c9d6"))
+            if pot:
+                p.setPen(Qt.NoPen)
+                p.setBrush(QColor("#111"))
+                p.drawRect(r.translated(3, 3))
+                p.setPen(QPen(QColor("#111"), 2))
+                p.setBrush(QColor(P["overlay_bg"]))
+                p.drawRect(r)
+                p.setBrush(QColor(col))
+                p.drawRect(QRectF(x, y, 6, lh - 4))
+                p.setPen(QColor("#111"))
+            else:
+                p.setPen(Qt.NoPen)
+                bg = QColor(P["overlay_bg"])
+                bg.setAlpha(225)
+                p.setBrush(bg)
+                p.drawRoundedRect(r, 6, 6)
+                p.setBrush(QColor(col))
+                p.drawRoundedRect(QRectF(x, y, 3, lh - 4), 1.5, 1.5)
+                p.setPen(QColor(col))
             p.drawText(r.adjusted(14, 0, -6, 0), Qt.AlignVCenter | Qt.AlignLeft, text)
             y += lh

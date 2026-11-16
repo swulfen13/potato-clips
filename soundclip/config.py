@@ -67,6 +67,20 @@ DEFAULTS: dict = {
     "voice_hotkeys": {},              # preset -> hotkey
     "voice_amounts": {},              # preset -> Staerke 0..1 (pro Effekt gemerkt)
     "retrigger": "restart",           # restart | stop | overlap
+    # Aussehen & Sprache
+    "ui_theme": "pro",                # pro | potato
+    "language": "auto",               # auto | de | en
+    "setup_done": False,              # Einrichtungs-Assistent schon durch?
+    # Neue Funktionen
+    "custom_voices": {},              # eigene Stimmeffekte: key -> {name, emoji, chain}
+    "duck_enabled": False,            # andere Apps leiser, wenn ein Sound laeuft
+    "duck_level": 0.3,                # so laut bleiben die anderen Apps (0..1)
+    "duck_discord": False,            # auch Discord leiser machen?
+    "tts_voice": "",                  # Windows-Stimme fuers Vorlesen ("" = Standard)
+    "tts_effect": True,               # Vorlesen mit aktuellem Stimmeffekt
+    "clip_autocopy": False,           # neue Clips sofort als MP3 in die Zwischenablage
+    "update_check": True,             # beim Start nach Updates schauen
+    "last_update_check": 0,
     # Oberflaeche
     "overlay_enabled": True,
     "overlay_corner": "top-right",
@@ -81,6 +95,7 @@ DEFAULTS: dict = {
         "voice_next": "ctrl+alt+n",
         "voice_up": "ctrl+alt+page up",
         "voice_down": "ctrl+alt+page down",
+        "voice_hold": "",
     },
 }
 
@@ -105,6 +120,8 @@ class Config:
                 data = json.loads(path.read_text(encoding="utf-8-sig"))
             except Exception:
                 data = {}
+        if path.exists() and data and "setup_done" not in data:
+            data["setup_done"] = True        # bestehende Nutzer nicht mit dem Assistenten nerven
         self.data = _merge(DEFAULTS, data)
 
     def __getitem__(self, key):

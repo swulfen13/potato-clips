@@ -28,6 +28,15 @@
 - **Apps an Discord schicken.** Zum Beispiel Spotify, damit deine Freunde die Musik mithören.
 - **Aufnahme** einzelner Apps oder von allem, mit Start und Stop per Hotkey.
 - **Mini-Overlay** im Spiel: zeigt REC, laufende Sounds und Meldungen und ist klick-durchlässig.
+- **Zwei Looks:** *Profi* (dunkel, schlicht) oder *Potato* (gelb, laut, mit Quatsch-Texten). Auf Deutsch oder Englisch.
+- **Einrichtungs-Assistent** beim ersten Start: VB-Cable, Discord und Mikro in fünf Schritten.
+- **Eigene Effekte mixen:** Tonhöhe, Verzerrung, Hall usw. zu einem eigenen Stimmeffekt kombinieren.
+- **Effekt nur beim Drücken:** Taste halten, solange klingt die Stimme verändert.
+- **Text vorlesen:** Text eintippen, mit Windows-Stimme (optional mit Effekt) abspielen oder als Sound speichern.
+- **Lautstärke-Ducking:** Während ein Sound läuft, werden andere Apps (optional auch Discord) leiser.
+- **Clips schnell teilen:** Clip als MP3 in die Zwischenablage kopieren und direkt in Discord einfügen.
+- **Sound-Packs:** Sounds als `.potatopack` exportieren und Freunden schicken; Import per Reinziehen.
+- **Auto-Updates:** Prüft auf neue Versionen auf GitHub und installiert sie auf Wunsch.
 - **Alles lokal.** Nichts wird hochgeladen, keine Konten und kein Tracking.
 
 ![Clips & Editor](docs/screenshot-clips.png)

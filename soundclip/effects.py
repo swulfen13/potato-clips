@@ -786,7 +786,41 @@ VOICE_PRESETS: dict[str, tuple[str, list[tuple[str, float]]]] = {
 }
 
 
+# Eigene Stimmeffekte (vom Nutzer gemixt): key -> Anzeigename
+CUSTOM_NAMES: dict[str, str] = {}
+
+
+def register_custom(key: str, name: str, emoji: str, chain: list) -> None:
+    """Eigenen Effekt (Kette aus Live-Effekten) als Stimm-Preset verfuegbar machen."""
+    clean = []
+    for k, a in chain or []:
+        if k in LIVE_KEYS:
+            clean.append((k, float(np.clip(float(a), 0.0, 1.0))))
+    if not clean:
+        return
+    VOICE_PRESETS[key] = (emoji or "★", clean[:6])
+    CUSTOM_NAMES[key] = name or "Eigener Effekt"
+
+
+def unregister_custom(key: str) -> None:
+    VOICE_PRESETS.pop(key, None)
+    CUSTOM_NAMES.pop(key, None)
+
+
+def load_customs(custom: dict) -> None:
+    """Alle eigenen Effekte aus den Einstellungen (cfg["custom_voices"]) registrieren."""
+    for k in [k for k in VOICE_PRESETS if k.startswith("custom_")]:
+        unregister_custom(k)
+    for key, d in (custom or {}).items():
+        try:
+            register_custom(key, d.get("name", ""), d.get("emoji", "★"), d.get("chain", []))
+        except Exception:
+            pass
+
+
 def voice_name(key: str) -> str:
+    if key in CUSTOM_NAMES:
+        return CUSTOM_NAMES[key]
     return label(key).split(" ", 1)[-1] if key in EFFECTS else key
 
 

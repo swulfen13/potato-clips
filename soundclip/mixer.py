@@ -475,8 +475,18 @@ class Mixer:
         else:
             pre, amt = "", 0.0
             self.voice.set("", 0)
-        HelperHost.get().command(f"fxset set {self.voice.key or '-'} {amt:.3f}")
+        HelperHost.get().command(self._fx_msg(self.voice.key, amt))
         self.apply_voice_path()
+
+    @staticmethod
+    def _fx_msg(key: str, amount: float) -> str:
+        """Befehl fuer den Effekt-Prozess (eigene Effekte bringen ihre Kette mit)."""
+        msg = f"fxset set {key or '-'} {amount:.3f}"
+        if key and key.startswith("custom_"):
+            import json
+            from .effects import VOICE_PRESETS
+            msg += " " + json.dumps([[k, a] for k, a in VOICE_PRESETS.get(key, ("", []))[1]])
+        return msg
 
     def apply_clean(self):
         """Mikro-Reinigung (KI-Rauschfilter + Gate) nach Einstellungen neu aufbauen."""
@@ -533,7 +543,7 @@ class Mixer:
             fx = self.voice_fx()
             if native and host.pid is not None and (fx or self._fx_pid != host.pid):
                 # Effekt-Prozess vorab starten, damit das Umschalten per Hotkey sofort klingt
-                host.command(f"fxset set {self.voice.key or '-'} {self.voice.amount if fx else 0:.3f}")
+                host.command(self._fx_msg(self.voice.key, self.voice.amount if fx else 0))
                 host.command("fxstart " + fx_worker_cmd())
                 self._fx_pid = host.pid
             host.command(f"voiceconf {int(mix)} {int(bool(self.cfg['clean_mic']))} "

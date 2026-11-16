@@ -25,6 +25,7 @@ ACTION_NAMES = {
     "voice_next": "Nächster Stimmeffekt",
     "voice_up": "Stimmeffekt stärker",
     "voice_down": "Stimmeffekt schwächer",
+    "voice_hold": "Stimmeffekt nur solange gedrückt",
 }
 
 
@@ -36,10 +37,14 @@ class Controller(QObject):
     overlayToggled = Signal(bool)
     settingsChanged = Signal()
     voiceChanged = Signal()
+    shareReady = Signal(str)            # Datei fuer die Zwischenablage (aus Hintergrund-Thread)
+    updateFound = Signal(dict)          # neue Version auf GitHub
 
     def __init__(self):
         super().__init__()
         self.cfg = Config()
+        from .effects import load_customs
+        load_customs(self.cfg["custom_voices"])
         self.mixer = Mixer(self.cfg)
         self.sources = SourceManager(self.cfg, self.mixer)
         self.sounds = SoundLibrary()
@@ -47,6 +52,9 @@ class Controller(QObject):
         self.hotkeys = HotkeyManager()
         self.hotkeys.triggered.connect(self._on_hotkey)
         self.hotkey_errors: list[str] = []
+        self.shareReady.connect(self._copy_share)
+        self._ducked = False
+        self._duck_quiet_since = 0.0
 
     def start(self):
         try:
@@ -56,6 +64,11 @@ class Controller(QObject):
             self.toast.emit(f"Audio-Ausgabe: {e}", "warn")
         self.sources.start()
         self.apply_hotkeys()
+        from PySide6.QtCore import QTimer
+        self._duck_timer = QTimer(self)
+        self._duck_timer.timeout.connect(self._duck_tick)
+        self._duck_timer.start(80)
+        self.check_updates(auto=True)
 
     def shutdown(self):
         self.hotkeys.shutdown()
@@ -84,6 +97,10 @@ class Controller(QObject):
                 self.set_voice(enabled=False)
             else:
                 self.set_voice(arg, True)
+        elif arg.startswith("voice_hold:"):
+            down = arg.endswith(":down")
+            if bool(self.cfg["voice_enabled"]) != down:
+                self.set_voice(enabled=down, quiet=True)
         elif arg == "voice_toggle":
             self.set_voice(enabled=not self.cfg["voice_enabled"])
         elif arg in ("voice_up", "voice_down"):
@@ -154,6 +171,14 @@ class Controller(QObject):
             names = ", ".join(st["label"] for st in meta["stems"])
             self.toast.emit(f"✂ Clip gespeichert ({sec:g}s): {names}", "ok")
             self.clipsChanged.emit(meta["id"])
+            if self.cfg["clip_autocopy"]:
+                try:
+                    from .library import render
+                    from .share import encode
+                    data = render(meta, self.clips.stems(meta), meta.get("edit") or {})
+                    self.shareReady.emit(str(encode(data, meta["name"])))
+                except Exception:
+                    log.exception("Clip teilen")
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -205,6 +230,62 @@ class Controller(QObject):
             self.toast.emit(msg, "info")
         else:
             self.toast.emit("🎭 Stimmeffekt aus", "info")
+
+    # ---------------------------------------------------------- Teilen / Ducking / Updates
+    def _copy_share(self, path: str):
+        from .share import copy_file, too_big
+        copy_file(path)
+        if too_big(path):
+            self.toast.emit("Clip ist größer als 10 MB – Discord nimmt ihn evtl. nicht", "warn")
+        else:
+            self.toast.emit("📋 Clip kopiert – in Discord mit Strg+V einfügen", "ok")
+
+    def _duck_tick(self):
+        import time as _t
+        want = False
+        if self.cfg["duck_enabled"]:
+            for v in self.mixer.playing():
+                if "monitor" in v.pos and "monitor" not in v.done:
+                    want = True
+                    break
+        now = _t.time()
+        if want:
+            self._duck_quiet_since = 0.0
+            if not self._ducked:
+                skip = [] if self.cfg["duck_discord"] else ["discord.exe", "discordptb.exe", "discordcanary.exe"]
+                from .host import HelperHost
+                HelperHost.get().command(f"duck {float(self.cfg['duck_level']):.2f} {','.join(skip) or '-'}")
+                self._ducked = True
+        elif self._ducked:
+            if not self._duck_quiet_since:
+                self._duck_quiet_since = now
+            elif now - self._duck_quiet_since > 0.35:
+                from .host import HelperHost
+                HelperHost.get().command("unduck")
+                self._ducked = False
+
+    def check_updates(self, auto: bool = False):
+        """Im Hintergrund auf GitHub nach einer neuen Version schauen (automatisch hoechstens 1x am Tag)."""
+        import time as _t
+        if auto and (not self.cfg["update_check"] or _t.time() - float(self.cfg["last_update_check"] or 0) < 86400):
+            return
+
+        def work():
+            from . import updater
+            try:
+                info = updater.check()
+            except Exception as e:
+                log.info("Update-Pruefung: %s", e)
+                if not auto:
+                    self.toast.emit("Update-Prüfung fehlgeschlagen (offline?)", "warn")
+                return
+            self.cfg["last_update_check"] = _t.time()
+            if info:
+                self.updateFound.emit(info)
+            elif not auto:
+                self.toast.emit("Du hast die neueste Version", "ok")
+
+        threading.Thread(target=work, daemon=True).start()
 
     def voice_amount(self, preset: str | None = None) -> float:
         pre = preset or self.cfg["voice_preset"]

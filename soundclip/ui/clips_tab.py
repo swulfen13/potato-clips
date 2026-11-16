@@ -162,9 +162,13 @@ class ClipsTab(QWidget):
         self.b_sound.clicked.connect(self._to_soundboard)
         self.b_export = QPushButton("💾 Exportieren…")
         self.b_export.clicked.connect(self._export)
+        self.b_share = QPushButton("📋 Für Discord kopieren")
+        self.b_share.setToolTip("Als MP3 in die Zwischenablage – in Discord mit Strg+V einfügen")
+        self.b_share.clicked.connect(self._share)
         for b in (self.b_prev, self.b_play, self.b_stop):
             act.addWidget(b)
         act.addStretch(1)
+        act.addWidget(self.b_share)
         act.addWidget(self.b_export)
         act.addWidget(self.b_sound)
         rl.addLayout(act)
@@ -173,7 +177,7 @@ class ClipsTab(QWidget):
         split.setSizes([300, 800])
 
         self.editor_widgets = [self.name, self.wave, self.fx_combo, b_add, self.b_prev, self.b_play,
-                               self.b_stop, self.b_sound, self.b_export, b_reset, b_last5, b_last10, b_auto]
+                               self.b_stop, self.b_sound, self.b_export, self.b_share, b_reset, b_last5, b_last10, b_auto]
         self._enable(False)
         ctl.clipsChanged.connect(self._on_new_clip)
         self.reload()
@@ -517,6 +521,19 @@ class ClipsTab(QWidget):
         s = self.ctl.sounds.add_array(name.strip(), data)
         self.ctl.soundsChanged.emit()
         self.ctl.toast.emit(f"„{s['name']}“ ist jetzt im Soundboard – Rechtsklick drauf für Hotkey", "ok")
+
+    def _share(self):
+        data = self._rendered()
+        if data is None or not len(data):
+            self.ctl.toast.emit("Nichts zu hören – ist mindestens eine Quelle aktiv?", "warn")
+            return
+        from ..share import encode
+        try:
+            path = encode(data, self.meta["name"])
+        except Exception as e:
+            QMessageBox.warning(self, "Fehler", str(e))
+            return
+        self.ctl._copy_share(str(path))
 
     def _export(self):
         data = self._rendered()

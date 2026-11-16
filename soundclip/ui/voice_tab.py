@@ -8,7 +8,14 @@ from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFrame, QGridLayout, Q
 
 from ..effects import EFFECTS, VOICE_PRESETS, voice_name
 from ..hotkeys import pretty
+from . import theme
+from .theme import P
 from .widgets import ACCENT, MUTED, RED, FlowLayout, HotkeyEdit, LevelMeter, ToggleSwitch, card
+
+
+def _lang() -> str:
+    from .. import i18n
+    return i18n.LANG
 
 DESCRIPTIONS = {
     "potato": "Billiges Kartoffel-Mikro",
@@ -45,12 +52,12 @@ class PresetTile(QFrame):
         self.key = key
         self.emoji = VOICE_PRESETS[key][0]
         self.name = voice_name(key)
-        self.desc = DESCRIPTIONS.get(key, "")
+        self.desc = DESCRIPTIONS.get(key, "Eigener Effekt" if key.startswith("custom_") else "")
         self.hotkey = ""
         self.active = False
         self.hover = False
         self.amount = 0.5
-        self.setFixedSize(176, 118)
+        self.setFixedSize(184, 124) if theme.potato() else self.setFixedSize(176, 112)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip(f"{self.name}\nKlick: einschalten / ausschalten · Rechtsklick: Hotkey")
 
@@ -80,57 +87,105 @@ class PresetTile(QFrame):
         self.menuRequested.emit(self.key, e.globalPos())
 
     def paintEvent(self, e):
+        from ..i18n import tr
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
+        name, desc = tr(self.name), tr(self.desc)
+        if theme.potato():
+            self._paint_potato(p, name, desc)
+            return
         r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
         if self.active:
-            g = QLinearGradient(r.topLeft(), r.bottomRight())
-            g.setColorAt(0, QColor("#7c5cff"))
-            g.setColorAt(1, QColor("#c2477a"))
-            p.setBrush(g)
-            p.setPen(QPen(QColor("#b9a8ff"), 2))
+            p.setBrush(QColor(P["accent_soft"]))
+            p.setPen(QPen(QColor(P["accent"]), 1.5))
         else:
-            p.setBrush(QColor("#1d1f29") if self.hover else QColor("#181a22"))
-            p.setPen(QPen(QColor(ACCENT) if self.hover else QColor("#272a36"), 1.5))
-        p.drawRoundedRect(r, 14, 14)
+            p.setBrush(QColor(P["panel_hover"]) if self.hover else QColor(P["panel"]))
+            p.setPen(QPen(QColor(P["border2"]) if self.hover else QColor(P["border"]), 1))
+        p.drawRoundedRect(r, 10, 10)
         f = QFont(self.font())
-        f.setPointSizeF(22)
-        p.setFont(f)
-        p.setPen(QColor("white"))
-        p.drawText(QRectF(r.left() + 12, r.top() + 6, 50, 44), Qt.AlignLeft | Qt.AlignVCenter, self.emoji)
         f.setPointSizeF(10.5)
         f.setBold(True)
         p.setFont(f)
-        p.drawText(QRectF(r.left() + 14, r.top() + 52, r.width() - 24, 22), Qt.AlignLeft | Qt.AlignVCenter,
-                   self.name)
+        p.setPen(QColor(P["text"]))
+        p.drawText(QRectF(r.left() + 14, r.top() + 12, r.width() - 28, 24), Qt.AlignLeft | Qt.AlignVCenter,
+                   p.fontMetrics().elidedText(name, Qt.ElideRight, int(r.width() - 28)))
         f.setBold(False)
-        f.setPointSizeF(8.5)
+        f.setPointSizeF(8.8)
         p.setFont(f)
-        p.setPen(QColor("#e6e0ff") if self.active else QColor(MUTED))
-        p.drawText(QRectF(r.left() + 14, r.top() + 74, r.width() - 24, 18), Qt.AlignLeft | Qt.AlignVCenter,
-                   p.fontMetrics().elidedText(self.desc, Qt.ElideRight, int(r.width() - 24)))
+        p.setPen(QColor(P["muted"]))
+        p.drawText(QRectF(r.left() + 14, r.top() + 38, r.width() - 28, 34), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap,
+                   desc)
         if self.hotkey:
             fm = p.fontMetrics()
             txt = pretty(self.hotkey)
-            w = fm.horizontalAdvance(txt) + 14
-            pill = QRectF(r.right() - w - 10, r.top() + 12, w, 20)
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor(0, 0, 0, 100))
-            p.drawRoundedRect(pill, 6, 6)
-            p.setPen(QColor("#e6e6f0"))
+            w = fm.horizontalAdvance(txt) + 12
+            pill = QRectF(r.right() - w - 10, r.bottom() - 34, w, 18)
+            p.setPen(QPen(QColor(P["border2"]), 1))
+            p.setBrush(QColor(P["panel2"]))
+            p.drawRoundedRect(pill, 4, 4)
+            p.setPen(QColor(P["text"]))
             p.drawText(pill, Qt.AlignCenter, txt)
-        # Staerke-Balken unten
-        bar = QRectF(r.left() + 14, r.bottom() - 13, r.width() - 64, 4)
+        bar = QRectF(r.left() + 14, r.bottom() - 12, r.width() - 64, 3)
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor(255, 255, 255, 50) if self.active else QColor("#2b2f3c"))
-        p.drawRoundedRect(bar, 2, 2)
-        p.setBrush(QColor("white") if self.active else QColor(ACCENT))
-        p.drawRoundedRect(QRectF(bar.left(), bar.top(), bar.width() * self.amount, bar.height()), 2, 2)
+        p.setBrush(QColor(P["border"]))
+        p.drawRoundedRect(bar, 1.5, 1.5)
+        p.setBrush(QColor(P["accent"]) if self.active else QColor(P["wave_off"]))
+        p.drawRoundedRect(QRectF(bar.left(), bar.top(), bar.width() * self.amount, bar.height()), 1.5, 1.5)
         f.setPointSizeF(8)
         p.setFont(f)
-        p.setPen(QColor("white") if self.active else QColor(MUTED))
-        p.drawText(QRectF(r.right() - 46, r.bottom() - 20, 38, 16), Qt.AlignRight | Qt.AlignVCenter,
+        p.setPen(QColor(P["text"]) if self.active else QColor(P["muted"]))
+        p.drawText(QRectF(r.right() - 46, r.bottom() - 20, 36, 16), Qt.AlignRight | Qt.AlignVCenter,
                    f"{int(round(self.amount * 100))} %")
+
+    def _paint_potato(self, p, name, desc):
+        idx = list(VOICE_PRESETS).index(self.key) if self.key in VOICE_PRESETS else 0
+        col = QColor(theme.POTATO_TILES[idx % len(theme.POTATO_TILES)])
+        tilt = theme.POTATO_TILTS[idx % len(theme.POTATO_TILTS)] * (0.4 if self.hover else 1.0)
+        w, h = self.width(), self.height()
+        p.translate(w / 2, h / 2)
+        p.rotate(tilt)
+        p.translate(-w / 2, -h / 2)
+        sh = 7 if self.active else 5
+        r = QRectF(6, 6, w - 12 - sh, h - 12 - sh)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#111"))
+        p.drawRect(r.translated(sh, sh))
+        p.setBrush(col)
+        p.setPen(QPen(QColor("#111"), 4.5 if self.active else 3))
+        p.drawRect(r)
+        f = QFont(self.font())
+        f.setPointSizeF(17)
+        p.setFont(f)
+        p.drawText(QRectF(r.left() + 10, r.top() + 4, 40, 34), Qt.AlignLeft | Qt.AlignVCenter, self.emoji)
+        f = QFont("Bungee")
+        f.setPointSizeF(10)
+        p.setFont(f)
+        p.setPen(QColor("#111"))
+        p.drawText(QRectF(r.left() + 10, r.top() + 38, r.width() - 20, 20), Qt.AlignLeft | Qt.AlignVCenter,
+                   p.fontMetrics().elidedText(name.upper(), Qt.ElideRight, int(r.width() - 20)))
+        f = QFont("Comic Neue")
+        f.setBold(True)
+        f.setPointSizeF(8.5)
+        p.setFont(f)
+        p.drawText(QRectF(r.left() + 10, r.top() + 58, r.width() - 20, 18), Qt.AlignLeft | Qt.AlignVCenter,
+                   p.fontMetrics().elidedText(desc, Qt.ElideRight, int(r.width() - 20)))
+        txt = f"{int(round(self.amount * 100))} % " + ("bad" if _lang() == "en" else "schlimm")
+        fm = p.fontMetrics()
+        pill = QRectF(r.left() + 10, r.bottom() - 24, fm.horizontalAdvance(txt) + 12, 18)
+        p.setPen(QPen(QColor("#111"), 2))
+        p.setBrush(QColor("white"))
+        p.drawRect(pill)
+        p.drawText(pill, Qt.AlignCenter, txt)
+        if self.hotkey:
+            hk = pretty(self.hotkey)
+            wk = fm.horizontalAdvance(hk) + 12
+            pk = QRectF(r.right() - wk - 8, r.top() + 8, wk, 18)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor("#111"))
+            p.drawRect(pk)
+            p.setPen(QColor("#FFE94D"))
+            p.drawText(pk, Qt.AlignCenter, hk)
+
 
 
 class HotkeyDialog(QDialog):
@@ -150,6 +205,67 @@ class HotkeyDialog(QDialog):
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
+
+
+class CustomVoiceDialog(QDialog):
+    """Eigenen Stimmeffekt aus bis zu 4 Live-Effekten mixen."""
+
+    def __init__(self, data: dict | None, parent=None):
+        super().__init__(parent)
+        from ..effects import LIVE_KEYS, label
+        self.setWindowTitle("Eigener Effekt")
+        self.setMinimumWidth(520)
+        data = data or {"name": "", "emoji": "★", "chain": [["potato", 0.5]]}
+        lay = QVBoxLayout(self)
+        lay.setSpacing(10)
+        top = QHBoxLayout()
+        from PySide6.QtWidgets import QLineEdit
+        self.emoji = QLineEdit(data.get("emoji", "★"))
+        self.emoji.setMaxLength(2)
+        self.emoji.setFixedWidth(52)
+        self.emoji.setAlignment(Qt.AlignCenter)
+        self.name = QLineEdit(data.get("name", ""))
+        self.name.setPlaceholderText("Name, z. B. Roboter im Keller")
+        top.addWidget(self.emoji)
+        top.addWidget(self.name, 1)
+        lay.addLayout(top)
+        hint = QLabel("Wähle bis zu 4 Effekte, sie werden der Reihe nach auf deine Stimme gelegt.")
+        hint.setObjectName("muted")
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
+        self.rows = []
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        from PySide6.QtWidgets import QComboBox
+        chain = list(data.get("chain", []))[:4]
+        for i in range(4):
+            cb = QComboBox()
+            cb.addItem("—", "")
+            for k in LIVE_KEYS:
+                cb.addItem(label(k), k)
+            sl = QSlider(Qt.Horizontal)
+            sl.setRange(0, 100)
+            if i < len(chain):
+                cb.setCurrentIndex(max(0, cb.findData(chain[i][0])))
+                sl.setValue(int(float(chain[i][1]) * 100))
+            else:
+                sl.setValue(50)
+            grid.addWidget(QLabel(f"{i + 1}."), i, 0)
+            grid.addWidget(cb, i, 1)
+            grid.addWidget(sl, i, 2)
+            self.rows.append((cb, sl))
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(2, 1)
+        lay.addLayout(grid)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        lay.addWidget(bb)
+
+    def values(self) -> dict:
+        chain = [[cb.currentData(), sl.value() / 100] for cb, sl in self.rows if cb.currentData()]
+        name = self.name.text().strip() or "Eigener Effekt"
+        return {"name": name[:40], "emoji": self.emoji.text().strip() or "★", "chain": chain}
 
 
 class VoiceTab(QWidget):
@@ -277,12 +393,7 @@ class VoiceTab(QWidget):
         inner = QWidget()
         inner.setObjectName("page")
         self.flow = FlowLayout(inner, 12)
-        for key in VOICE_PRESETS:
-            t = PresetTile(key)
-            t.clicked.connect(self._tile_clicked)
-            t.menuRequested.connect(self._tile_menu)
-            self.flow.addWidget(t)
-            self.tiles[key] = t
+        self._build_tiles()
         scroll.setWidget(inner)
         root.addWidget(scroll, 1)
 
@@ -298,11 +409,12 @@ class VoiceTab(QWidget):
         grid.setVerticalSpacing(6)
         self.hk_edits = {}
         for i, (action, text) in enumerate((("voice_toggle", "Effekt an/aus"), ("voice_next", "Nächster Effekt"),
-                                            ("voice_up", "Stärker (+10 %)"), ("voice_down", "Schwächer (−10 %)"))):
+                                            ("voice_up", "Stärker (+10 %)"), ("voice_down", "Schwächer (−10 %)"),
+                                            ("voice_hold", "Nur solange gedrückt"))):
             l = QLabel(text)
             l.setObjectName("muted")
             e = HotkeyEdit(cfg["hotkeys"].get(action, ""))
-            e.setMinimumWidth(210)
+            e.setMinimumWidth(170)
             e.changed.connect(lambda combo, a=action: ctl.set_action_hotkey(a, combo))
             r, c = divmod(i, 2)
             grid.addWidget(l, r, c * 2)
@@ -338,12 +450,75 @@ class VoiceTab(QWidget):
         else:
             self.ctl.set_voice(key, True)
 
+    # ---- Kacheln (inkl. eigener Effekte)
+    def _build_tiles(self):
+        while self.flow.count():
+            it = self.flow.takeAt(0)
+            if it and it.widget():
+                it.widget().deleteLater()
+        self.tiles = {}
+        for key in VOICE_PRESETS:
+            t = PresetTile(key)
+            t.clicked.connect(self._tile_clicked)
+            t.menuRequested.connect(self._tile_menu)
+            self.flow.addWidget(t)
+            self.tiles[key] = t
+        add = QPushButton("+  Eigener Effekt")
+        add.setObjectName("addtile")
+        add.setToolTip("Mehrere Effekte zu deinem eigenen Stimmeffekt mixen")
+        add.setFixedSize(184, 124) if theme.potato() else add.setFixedSize(176, 112)
+        add.setCursor(Qt.PointingHandCursor)
+        add.clicked.connect(lambda: self._edit_custom(None))
+        self.flow.addWidget(add)
+        if hasattr(self, "hk_lbl"):
+            self._sync()
+
+    def _edit_custom(self, key):
+        from ..effects import load_customs
+        customs = dict(self.ctl.cfg["custom_voices"] or {})
+        dlg = CustomVoiceDialog(customs.get(key), self)
+        if not dlg.exec():
+            return
+        data = dlg.values()
+        if not data["chain"]:
+            self.ctl.toast.emit("Mindestens einen Effekt auswählen", "warn")
+            return
+        if key is None:
+            import uuid
+            key = "custom_" + uuid.uuid4().hex[:6]
+        customs[key] = data
+        self.ctl.cfg["custom_voices"] = customs
+        load_customs(customs)
+        self._build_tiles()
+        self.ctl.set_voice(key, True)
+
+    def _delete_custom(self, key):
+        from ..effects import load_customs
+        customs = dict(self.ctl.cfg["custom_voices"] or {})
+        customs.pop(key, None)
+        self.ctl.cfg["custom_voices"] = customs
+        if self.ctl.cfg["voice_preset"] == key:
+            self.ctl.set_voice("potato", False, quiet=True)
+        load_customs(customs)
+        self._build_tiles()
+
     def _tile_menu(self, key, pos):
         m = QMenu(self)
         a_on = m.addAction("Einschalten")
         a_hk = m.addAction("⌨ Hotkey festlegen…")
         a_clear = m.addAction("Hotkey entfernen")
+        a_edit = a_del = None
+        if key.startswith("custom_"):
+            m.addSeparator()
+            a_edit = m.addAction("✎ Eigenen Effekt bearbeiten…")
+            a_del = m.addAction("🗑 Eigenen Effekt löschen")
         act = m.exec(pos)
+        if act is not None and act == a_edit:
+            self._edit_custom(key)
+            return
+        if act is not None and act == a_del:
+            self._delete_custom(key)
+            return
         if act == a_on:
             self.ctl.set_voice(key, True)
         elif act in (a_hk, a_clear):
@@ -398,7 +573,7 @@ class VoiceTab(QWidget):
         name = f"{VOICE_PRESETS[pre][0]}  {voice_name(pre)}" if pre in VOICE_PRESETS else ""
         self.current.setText(name if cfg["voice_enabled"] else "–  aus")
         self.current.setStyleSheet("font-size: 12pt; font-weight: 700; background: transparent; color: %s;"
-                                   % ("white" if cfg["voice_enabled"] else MUTED))
+                                   % (P["text"] if cfg["voice_enabled"] else MUTED))
         self.hk_lbl.setText("Tipp: Rechtsklick auf einen Effekt = eigener Hotkey nur für diesen Effekt. "
                             "„Stärker/Schwächer“ ändert den gerade aktiven Effekt in 10-%-Schritten.")
         for action, e in self.hk_edits.items():
@@ -440,7 +615,7 @@ class VoiceTab(QWidget):
                    "<b>CABLE Input</b> wählen.")
             btn = True
         elif cfg["mic_passthrough"]:
-            txt = ("<span style='color:#2ec4b6'>●</span> Bereit – in Discord muss das Eingabegerät "
+            txt = ("<span style='color:" + P["green"] + "'>●</span> Bereit – in Discord muss das Eingabegerät "
                    "<b>CABLE Output</b> sein.")
             btn = False
             self._n = getattr(self, "_n", 0) + 1

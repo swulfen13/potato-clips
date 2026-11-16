@@ -3,16 +3,26 @@ import os, sys, time, subprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import _testenv  # noqa: E402,F401  (eigener Datenordner, nur lautlose Geraete)
 import numpy as np
+from pathlib import Path
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 
+MODE = os.environ.get("POTATO_THEME", "pro")
+LANG = os.environ.get("POTATO_LANG", "de")
+OUT = os.path.join(os.path.dirname(__file__), "shots", f"{MODE}_{LANG}")
+os.makedirs(OUT, exist_ok=True)
+app = QApplication(sys.argv)
+from soundclip import i18n
+from soundclip.ui import theme
+theme.set_mode(MODE)
+i18n.setup(LANG, MODE)
+for _f in (Path(__file__).resolve().parent.parent / "assets" / "fonts").glob("*.ttf"):
+    QFontDatabase.addApplicationFont(str(_f))
+i18n.install(app)
 from soundclip.controller import Controller
 from soundclip.ui.main_window import MainWindow
 from soundclip.ui.widgets import STYLE
-
-OUT = os.path.join(os.path.dirname(__file__), "shots")
-os.makedirs(OUT, exist_ok=True)
-app = QApplication(sys.argv)
 app.setStyle("Fusion")
 app.setStyleSheet(STYLE)
 ctl = Controller()
@@ -72,12 +82,40 @@ def rec_start():
 def rec_stop():
     ctl.stop_recording()
 
+GER = __import__("re").compile(r"[äöüÄÖÜß]|\b(und|nicht|der|die|das|mit|ein|eine|ist|für|auf|wird|deine|Stimme|"
+                                r"Einstellungen|Quellen|Aufnahme|Lautstärke|Sounds hinzufügen|Ordner|Mikrofon)\b")
+
+
+def german_leftovers():
+    """Im englischen Modus: sichtbare Texte, die noch deutsch aussehen."""
+    from PySide6.QtWidgets import QAbstractButton, QComboBox, QGroupBox, QLabel, QWidget
+    found = set()
+    for w in [win] + win.findChildren(QWidget):
+        texts = []
+        if isinstance(w, (QLabel, QAbstractButton)):
+            texts.append(w.text())
+        if isinstance(w, QGroupBox):
+            texts.append(w.title())
+        if isinstance(w, QComboBox):
+            texts += [w.itemText(i) for i in range(w.count())]
+        texts.append(w.toolTip())
+        for t in texts:
+            if t and GER.search(t) and "Potato" not in t[:7]:
+                found.add(t.replace("\n", " ")[:110])
+    return sorted(found)
+
+
 def finish():
     print("Quellen:", [(k, s.status) for k, s in ctl.sources.sources.items()])
     print("Ausgaben:", ctl.mixer.devices, ctl.mixer.errors, {t: ctl.mixer.is_open(t) for t in ("monitor", "virtual")})
     print("Hotkey-Fehler:", ctl.hotkey_errors)
     print("Clips:", [(m["name"], [s["label"] for s in m["stems"]]) for m in ctl.clips.list()[:3]])
     print("Fehler im UI:", errors or "keine")
+    if LANG == "en":
+        left = german_leftovers()
+        print("Deutsch uebrig:", len(left))
+        for t in left:
+            print("   ", t)
     # Testdaten aufraeumen
     for s in (s1, s2):
         ctl.sounds.remove(s["id"])
@@ -103,6 +141,10 @@ step(1200, shot("6_stimme"))
 step(100, lambda: ctl.set_voice(enabled=False))
 step(100, lambda: win.tabs.setCurrentWidget(win.settings))
 step(600, shot("4_einstellungen"))
+step(100, lambda: win.settings._goto("discord"))
+step(500, shot("4b_einstellungen_discord"))
+step(100, lambda: win.settings._goto("hotkeys"))
+step(500, shot("4c_einstellungen_hotkeys"))
 step(100, overlay_shot)
 step(1200, finish)
 

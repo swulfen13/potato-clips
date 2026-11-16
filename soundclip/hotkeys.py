@@ -56,7 +56,11 @@ def combo_to_qt(combo: str) -> str:
 
 
 def pretty(combo: str) -> str:
-    return combo_to_qt(combo).replace("Meta", "Win").replace("Ctrl", "Strg") if combo else ""
+    if not combo:
+        return ""
+    from . import i18n
+    txt = combo_to_qt(combo).replace("Meta", "Win")
+    return txt if i18n.LANG == "en" else txt.replace("Ctrl", "Strg")
 
 
 class HotkeyManager(QObject):
@@ -83,7 +87,14 @@ class HotkeyManager(QObject):
                 errors.append(f"„{pretty(combo)}“ doppelt belegt ({used[combo]} / {name})")
                 continue
             try:
-                h = keyboard.add_hotkey(combo, self._fire, args=(name,), suppress=False)
+                if name.endswith("_hold"):
+                    # gedrueckt halten: Druecken und Loslassen getrennt melden
+                    h = keyboard.add_hotkey(combo, self._fire, args=(name + ":down",), suppress=False)
+                    self._handles.append(h)
+                    h = keyboard.add_hotkey(combo, self._fire, args=(name + ":up",), suppress=False,
+                                            trigger_on_release=True)
+                else:
+                    h = keyboard.add_hotkey(combo, self._fire, args=(name,), suppress=False)
                 self._handles.append(h)
                 used[combo] = name
             except Exception as e:

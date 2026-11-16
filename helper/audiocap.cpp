@@ -1129,9 +1129,154 @@ static DWORD WINAPI streamThread(LPVOID p) {
     return 0;
 }
 
+// ---------------------------------------------------------------- Ducking: andere Apps leiser, solange ein Sound laeuft
+// Merkt sich die Original-Lautstaerke jeder App-Session und stellt sie danach wieder her (auch nach einem Absturz:
+// die Werte stehen in %TEMP%\potato_clips_duck.txt und werden beim naechsten Start zurueckgesetzt).
+static std::mutex g_duckLock;
+static std::map<std::wstring, float> g_ducked;
+
+static std::wstring duckFile() {
+    wchar_t t[MAX_PATH];
+    GetTempPathW(MAX_PATH, t);
+    return std::wstring(t) + L"potato_clips_duck.txt";
+}
+
+static std::string exeOf(DWORD pid) {
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!h) return "";
+    wchar_t buf[MAX_PATH];
+    DWORD n = MAX_PATH;
+    std::string out;
+    if (QueryFullProcessImageNameW(h, 0, buf, &n)) {
+        std::wstring w(buf, n);
+        size_t k = w.find_last_of(L"\\/");
+        out = utf8((k == std::wstring::npos ? w : w.substr(k + 1)).c_str());
+        for (auto& c : out) c = (char)tolower((unsigned char)c);
+    }
+    CloseHandle(h);
+    return out;
+}
+
+// fn(sessionId, volumeInterface, pid) fuer jede App-Session auf allen aktiven Ausgabegeraeten
+template <class F>
+static void forEachSession(F fn) {
+    IMMDeviceEnumerator* en = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
+                                (void**)&en))) return;
+    IMMDeviceCollection* col = nullptr;
+    if (SUCCEEDED(en->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &col))) {
+        UINT cnt = 0;
+        col->GetCount(&cnt);
+        for (UINT i = 0; i < cnt; i++) {
+            IMMDevice* dev = nullptr;
+            if (FAILED(col->Item(i, &dev))) continue;
+            IAudioSessionManager2* mgr = nullptr;
+            if (SUCCEEDED(dev->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, (void**)&mgr))) {
+                IAudioSessionEnumerator* se = nullptr;
+                if (SUCCEEDED(mgr->GetSessionEnumerator(&se))) {
+                    int n = 0;
+                    se->GetCount(&n);
+                    for (int j = 0; j < n; j++) {
+                        IAudioSessionControl* c = nullptr;
+                        if (FAILED(se->GetSession(j, &c))) continue;
+                        IAudioSessionControl2* c2 = nullptr;
+                        if (SUCCEEDED(c->QueryInterface(__uuidof(IAudioSessionControl2), (void**)&c2))) {
+                            DWORD pid = 0;
+                            c2->GetProcessId(&pid);
+                            LPWSTR sid = nullptr;
+                            bool sys = c2->IsSystemSoundsSession() == S_OK;
+                            if (!sys && pid && SUCCEEDED(c2->GetSessionInstanceIdentifier(&sid)) && sid) {
+                                ISimpleAudioVolume* v = nullptr;
+                                if (SUCCEEDED(c->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&v))) {
+                                    fn(std::wstring(sid), v, pid);
+                                    v->Release();
+                                }
+                            }
+                            if (sid) CoTaskMemFree(sid);
+                            c2->Release();
+                        }
+                        c->Release();
+                    }
+                    se->Release();
+                }
+                mgr->Release();
+            }
+            dev->Release();
+        }
+        col->Release();
+    }
+    en->Release();
+}
+
+static void saveDuckFile() {
+    std::wstring f = duckFile();
+    if (g_ducked.empty()) { DeleteFileW(f.c_str()); return; }
+    FILE* fp = nullptr;
+    if (_wfopen_s(&fp, f.c_str(), L"w, ccs=UTF-8") != 0 || !fp) return;
+    for (auto& kv : g_ducked) fwprintf(fp, L"%.4f\t%s\n", kv.second, kv.first.c_str());
+    fclose(fp);
+}
+
+static void duckApply(float factor, const std::string& skipCsv) {
+    std::lock_guard<std::mutex> lk(g_duckLock);
+    DWORD me = GetCurrentProcessId();
+    bool only = !skipCsv.empty() && skipCsv[0] == '+';          // "+a.exe,b.exe" = nur diese (fuer Tests)
+    std::string skip = "," + (only ? skipCsv.substr(1) : skipCsv) + ",";
+    forEachSession([&](const std::wstring& sid, ISimpleAudioVolume* v, DWORD pid) {
+        if (pid == me) return;
+        std::string exe = exeOf(pid);
+        if (exe.empty()) return;
+        bool listed = skip.find("," + exe + ",") != std::string::npos;
+        if (only ? !listed : listed) return;
+        auto it = g_ducked.find(sid);
+        float orig;
+        if (it == g_ducked.end()) {
+            if (FAILED(v->GetMasterVolume(&orig))) return;
+            g_ducked[sid] = orig;
+        } else {
+            orig = it->second;
+        }
+        v->SetMasterVolume(orig * factor, nullptr);
+    });
+    saveDuckFile();
+}
+
+static void duckRestore() {
+    std::lock_guard<std::mutex> lk(g_duckLock);
+    if (g_ducked.empty()) return;
+    forEachSession([&](const std::wstring& sid, ISimpleAudioVolume* v, DWORD) {
+        auto it = g_ducked.find(sid);
+        if (it != g_ducked.end()) v->SetMasterVolume(it->second, nullptr);
+    });
+    g_ducked.clear();
+    saveDuckFile();
+}
+
+static void duckRecoverFromFile() {
+    std::wstring f = duckFile();
+    FILE* fp = nullptr;
+    if (_wfopen_s(&fp, f.c_str(), L"r, ccs=UTF-8") != 0 || !fp) return;
+    wchar_t line[2048];
+    {
+        std::lock_guard<std::mutex> lk(g_duckLock);
+        while (fgetws(line, 2048, fp)) {
+            wchar_t* tab = wcschr(line, L'\t');
+            if (!tab) continue;
+            *tab = 0;
+            std::wstring id(tab + 1);
+            while (!id.empty() && (id.back() == L'\n' || id.back() == L'\r')) id.pop_back();
+            g_ducked[id] = (float)_wtof(line);
+        }
+    }
+    fclose(fp);
+    duckRestore();
+    DeleteFileW(f.c_str());
+}
+
 static int cmdServer() {
     HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
     sendFrame(2, 0, "audiocap: server ok", 19);
+    duckRecoverFromFile();
     std::vector<BYTE> buf;
     while (!g_quit) {
         BYTE hdr[7];
@@ -1184,6 +1329,15 @@ static int cmdServer() {
                 g_voice.gain = gn;
             } else if (cmd == "voicetarget") {
                 g_voice.target = (int)id;
+            } else if (cmd.rfind("duck ", 0) == 0) {
+                float fac = 0.3f;
+                char skip[1024] = {0};
+                sscanf_s(cmd.c_str() + 5, "%f %1023s", &fac, skip, (unsigned)sizeof(skip));
+                if (fac < 0.f) fac = 0.f;
+                if (fac > 1.f) fac = 1.f;
+                duckApply(fac, skip);
+            } else if (cmd == "unduck") {
+                duckRestore();
             } else if (cmd == "montarget") {
                 g_voice.monTarget = (int)id;
             } else if (cmd.rfind("fxstart ", 0) == 0) {
@@ -1225,6 +1379,7 @@ static int cmdServer() {
         std::lock_guard<std::mutex> lk(g_streamsLock);
         for (auto& kv : g_streams) kv.second->stop = true;
     }
+    duckRestore();
     Sleep(300);
     flushOut(500);
     return 0;
