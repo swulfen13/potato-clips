@@ -661,10 +661,7 @@ class HotkeyEdit(QWidget):
         if self._cap_timer is not None:
             self._stop_capture()
             return
-        w = inputs.WATCHER
-        if w is None:
-            w = inputs.InputWatcher(lambda c, p: None)
-            inputs.WATCHER = w
+        w = inputs.shared()
         self._cap_result = None
         self._cap_left = 160                       # 8 Sekunden
         w.start_capture(lambda combo: setattr(self, "_cap_result", combo))

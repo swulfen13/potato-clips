@@ -63,6 +63,20 @@ w._pad_update(frozenset({"rb", "y"}))
 w._pad_update(frozenset())
 check("Aufnahme Controller-Kombi", got == ["pad:rb+y"], str(got))
 check("XInput ladbar", inputs._load_xinput() is not None)
+import ctypes  # noqa: E402
+
+check("Raw-Input-Layout wie winuser.h", inputs.RAWMOUSE.usButtonFlags.offset == 4
+      and inputs.RAWMOUSE.lLastX.offset == 12 and ctypes.sizeof(inputs.RAWMOUSE) == 24
+      and ctypes.sizeof(inputs.RAWINPUTHEADER) == 24,
+      f"flags@{inputs.RAWMOUSE.usButtonFlags.offset} size={ctypes.sizeof(inputs.RAWMOUSE)}")
+# Ein echtes Raw-Input-Paket nachbauen (nur Speicher, keine Eingabe) und so lesen wie die App
+raw = (ctypes.c_ubyte * 48)()
+ctypes.c_uint32.from_buffer(raw, 0).value = 0                  # RIM_TYPEMOUSE
+ctypes.c_uint16.from_buffer(raw, 24 + 4).value = 0x0080        # RI_MOUSE_BUTTON_4_UP ... Taste 4 hoch
+ctypes.c_int32.from_buffer(raw, 24 + 12).value = -7
+pkt = inputs.RAWINPUT.from_buffer(raw)
+check("Maustaste aus Raw-Paket gelesen", pkt.mouse.usButtonFlags == 0x0080 and pkt.mouse.lLastX == -7)
+check("Gemeinsame Abfrage", inputs.shared() is inputs.shared(lambda c, p: None))
 
 from soundclip.hotkeys import HotkeyManager  # noqa: E402
 
@@ -157,6 +171,55 @@ items = wheel_items(FakeCtl({"wheel_source": "fav"}, FakeLib()))
 check("Rad: Favoriten zuerst, max 8", [x["id"] for x in items[:2]] == ["5", "7"] and len(items) == 8)
 items = wheel_items(FakeCtl({"wheel_source": "memes"}, FakeLib()))
 check("Rad: Ordner", [x["id"] for x in items] == ["0", "1", "2"])
+
+# Rad geht zu, auch wenn das Loslassen nicht gemeldet wird
+from soundclip.ui.wheel import SoundWheel  # noqa: E402
+from PySide6.QtCore import QObject, Signal  # noqa: E402
+
+
+class WheelCtl(QObject):
+    wheelHold = Signal(bool)
+    toast = Signal(str, str)
+
+    def __init__(self):
+        super().__init__()
+        self.cfg = {"wheel_source": "fav", "hotkeys": {"wheel_hold": "pad:lb+rb"}}
+        self.sounds = FakeLib()
+        self.played = []
+        self.stats = type("S", (), {"add": lambda *a: None})()
+        self.hotkeys = type("H", (), {"watcher": lambda _s: wat_fake})()
+
+    def play_sound(self, sid):
+        self.played.append(sid)
+
+
+wat_fake = inputs.InputWatcher(lambda c, p: None)
+wat_fake.track_motion = lambda on: None
+wctl = WheelCtl()
+wheel = SoundWheel(wctl)
+wat_fake._held = {"pad:lb+rb"}
+wheel.hold(True)
+t0 = time.time()
+while time.time() - t0 < 0.5:
+    app.processEvents()
+    time.sleep(0.01)
+check("Rad bleibt offen, solange gehalten", wheel.isVisible())
+wat_fake._held = set()                     # losgelassen, aber KEIN up-Ereignis
+t0 = time.time()
+while time.time() - t0 < 0.5:
+    app.processEvents()
+    time.sleep(0.01)
+check("Rad geht zu ohne Loslassen-Ereignis", not wheel.isVisible(),
+      f"(abgespielt: {wctl.played} - nur wenn die Maus gerade bewegt wurde)")
+wat_fake._held = {"pad:lb+rb"}
+wheel.hold(True)
+wheel._opened -= 9                         # Notbremse
+t0 = time.time()
+while time.time() - t0 < 0.2:
+    app.processEvents()
+    time.sleep(0.01)
+check("Rad Notbremse nach 8 s", not wheel.isVisible())
+wheel.hold(False)
 
 # ---------------------------------------------------------------- 5) Backup
 from soundclip import backup  # noqa: E402

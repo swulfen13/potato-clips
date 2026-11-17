@@ -62,6 +62,8 @@ class SoundWheel(QWidget):
                 self.ctl.toast.emit("Sound-Rad: noch keine Sounds im Soundboard", "warn")
             return
         self.sel = -1
+        import time
+        self._opened = time.time()
         scr = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         g = scr.geometry()
         self.move(g.center().x() - self.width() // 2, g.center().y() - self.height() // 2)
@@ -77,7 +79,7 @@ class SoundWheel(QWidget):
         if not self.isVisible():
             return
         self.timer.stop()
-        self._tick()
+        self._update_sel()
         w = self._watcher()
         if w is not None:
             w.track_motion(False)
@@ -86,13 +88,47 @@ class SoundWheel(QWidget):
             self.ctl.stats.add("wheel")
             self.ctl.play_sound(self.items[self.sel]["id"])
 
+    def cancel(self):
+        """Schliessen, ohne etwas abzuspielen."""
+        self.sel = -1
+        self.timer.stop()
+        w = self._watcher()
+        if w is not None:
+            w.track_motion(False)
+        self.hide()
+
     def _watcher(self):
         try:
             return self.ctl.hotkeys.watcher()
         except Exception:
             return None
 
+    def _key_held(self) -> bool:
+        """Ist die Rad-Taste noch gedrueckt? (Nicht nur auf das Loslassen-Ereignis verlassen.)"""
+        combo = str(self.ctl.cfg["hotkeys"].get("wheel_hold") or "")
+        if not combo:
+            return False
+        try:
+            if "mouse:" in combo or "pad:" in combo:
+                w = self._watcher()
+                return w is not None and combo in w._held
+            import keyboard
+            return bool(keyboard.is_pressed(combo))
+        except Exception:
+            return False
+
     def _tick(self):
+        import time
+        age = time.time() - getattr(self, "_opened", 0)
+        if age > 8:                             # Notbremse: nie laenger als 8 s offen
+            self.cancel()
+            return
+        if age > 0.15 and not self._key_held():
+            self.release()
+            return
+        self._update_sel()
+
+    def _update_sel(self):
         dx = dy = 0.0
         w = self._watcher()
         if w is not None and w.mouse_ok and (w.dx or w.dy):

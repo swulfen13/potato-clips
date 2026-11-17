@@ -123,8 +123,7 @@ class HotkeyManager(QObject):
         """Maus-/Gamepad-Abfrage (wird erst gestartet, wenn sie gebraucht wird)."""
         if self.inputs is None:
             from . import inputs
-            self.inputs = inputs.InputWatcher(self._special_event)
-            inputs.WATCHER = self.inputs
+            self.inputs = inputs.shared(self._special_event)
         return self.inputs
 
     def _special_event(self, combo: str, pressed: bool):

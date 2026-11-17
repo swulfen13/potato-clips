@@ -26,7 +26,17 @@ PAD_NAMES = {"up": "↑", "down": "↓", "left": "←", "right": "→", "start":
              "rs": "R3", "lb": "LB", "rb": "RB", "lt": "LT", "rt": "RT", "a": "A", "b": "B", "x": "X", "y": "Y"}
 PAD_ORDER = ["lb", "rb", "lt", "rt", "back", "start", "ls", "rs", "up", "down", "left", "right", "a", "b", "x", "y"]
 KB_MODS = ("ctrl", "alt", "shift", "windows")
-WATCHER = None                         # wird vom HotkeyManager gesetzt (fuer die Aufnahme im Hotkey-Feld)
+WATCHER = None                         # die eine gemeinsame Abfrage (Raw Input gibt es nur einmal pro Programm)
+
+
+def shared(callback=None):
+    """Gemeinsame InputWatcher-Instanz - zwei Raw-Input-Fenster wuerden sich gegenseitig die Maus wegnehmen."""
+    global WATCHER
+    if WATCHER is None:
+        WATCHER = InputWatcher(callback or (lambda c, p: None))
+    elif callback is not None:
+        WATCHER.callback = callback
+    return WATCHER
 
 
 def is_special(combo: str) -> bool:
@@ -92,8 +102,19 @@ class RAWINPUTHEADER(ctypes.Structure):
                 ("wParam", wintypes.WPARAM)]
 
 
+class _RAWMOUSE_BUTTONS(ctypes.Structure):
+    _fields_ = [("usButtonFlags", wintypes.USHORT), ("usButtonData", wintypes.USHORT)]
+
+
+class _RAWMOUSE_U(ctypes.Union):
+    _anonymous_ = ("b",)
+    _fields_ = [("ulButtons", wintypes.ULONG), ("b", _RAWMOUSE_BUTTONS)]
+
+
 class RAWMOUSE(ctypes.Structure):
-    _fields_ = [("usFlags", wintypes.USHORT), ("usButtonFlags", wintypes.USHORT), ("usButtonData", wintypes.USHORT),
+    # wie in winuser.h: nach usFlags kommt eine Union mit 4-Byte-Ausrichtung (usButtonFlags liegt bei Offset 4!)
+    _anonymous_ = ("u",)
+    _fields_ = [("usFlags", wintypes.USHORT), ("u", _RAWMOUSE_U),
                 ("ulRawButtons", wintypes.ULONG), ("lLastX", wintypes.LONG), ("lLastY", wintypes.LONG),
                 ("ulExtraInformation", wintypes.ULONG)]
 
