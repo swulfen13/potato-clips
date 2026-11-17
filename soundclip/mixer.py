@@ -309,6 +309,7 @@ class Mixer:
         self.live = LiveFifo()
         self.live_mon = LiveFifo()
         self.routes: dict[str, LiveFifo] = {}       # App-Quellen -> Discord
+        self._limiter = None                         # Ohrenschutz fuer eigene Sounds auf dem Kopfhoerer
         self.route_levels: dict[str, float] = {}
         self.cleaner = None
         self.voicein: VoiceIn | None = None
@@ -463,6 +464,11 @@ class Mixer:
             live = self.live_mon.pull(frames)
             if live is not None:
                 out += live * float(self.cfg["voice_monitor_gain"])
+        if target == "monitor" and self.cfg.get("ear_guard", False):
+            from .earguard import LEVELS, OutputLimiter
+            if self._limiter is None:
+                self._limiter = OutputLimiter()
+            out = self._limiter.process(out, LEVELS.get(str(self.cfg.get("ear_guard_level")), LEVELS["normal"]))
         np.clip(out, -1.0, 1.0, out=out)
         return out
 

@@ -53,6 +53,8 @@ class Controller(QObject):
     announceReady = Signal(object, bool)      # fertige Ansage: Audio, auch an Discord?
     speechReady = Signal(object, str)         # vorgelesener Text (vom Handy): Audio, Text
     wheelHold = Signal(bool)                  # Sound-Rad: Taste gedrueckt / losgelassen
+    profileFound = Signal(str)                # Spiel erkannt (aus dem Hintergrund-Thread): Profil-id oder ""
+    profileChanged = Signal(dict)             # aktives Profil ({} = Standard)
 
     def __init__(self):
         super().__init__()
@@ -81,7 +83,10 @@ class Controller(QObject):
         self.announcer = Announcer(self)
         self.triggers = VoiceTriggers(self.cfg, self.sounds, self.triggerFired.emit,
                                       command=self.voiceCommand.emit, apps=self.app_labels)
-        self.sources.listeners = [self.autoclip.on_chunk, self.triggers.on_chunk, self._activity]
+        from .earguard import EarGuard
+        self.guard = EarGuard(self.cfg, self._helper_cmd, self._duck_factor)
+        self.sources.listeners = [self.guard.on_chunk, self.autoclip.on_chunk, self.triggers.on_chunk,
+                                  self._activity]
         self.remote = RemoteServer(self)
         self.remoteCommand.connect(self.run_command)
         self.triggerFired.connect(self.play_sound)
@@ -92,6 +97,11 @@ class Controller(QObject):
         self.speechReady.connect(lambda data, text: self.mixer.play(data, sound_id="__tts__", name=text[:40],
                                                                     preview=False))
         self._rec_since = 0.0
+        self.profile: dict | None = None
+        self._profile_voice: tuple | None = None
+        from .profiles import ProfileWatcher
+        self.profile_watch = ProfileWatcher(self.cfg, self.profileFound.emit)
+        self.profileFound.connect(self._profile_found)
         self._tts_voices: list | None = None
         self.pending_update: str = ""      # fertig geladener Installer (Modus automatisch)
         self._update_busy = False
@@ -126,9 +136,16 @@ class Controller(QObject):
         except Exception:
             log.exception("Fernbedienung")
         self.triggers.sync()
+        if self.cfg["profile_manual"]:
+            self.set_profile(self.cfg["profile_manual"])
+        self.profile_watch.start()
 
     def shutdown(self):
         self.stats.save()
+        self.profile_watch.stop()
+        if self._profile_voice is not None:     # Stimme vom Profil nicht dauerhaft gespeichert lassen
+            en, pre = self._profile_voice
+            self.cfg.update(voice_enabled=en, voice_preset=pre)
         self.remote.stop()
         self.triggers.stop()
         self.autoclip.stop()
@@ -139,7 +156,10 @@ class Controller(QObject):
     # ---------------------------------------------------------- Hotkeys
     def apply_hotkeys(self):
         mapping = {f"action:{k}": v for k, v in self.cfg["hotkeys"].items()}
+        folder = (self.profile or {}).get("folder", "")
         for s in self.sounds.sounds:
+            if folder and not ((folder == "*fav" and s.get("fav")) or s.get("folder", "") == folder):
+                continue                        # Profil: nur die Sounds aus seinem Ordner
             if s.get("hotkey"):
                 mapping[f"sound:{s['id']}"] = s["hotkey"]
         for preset, combo in (self.cfg["voice_hotkeys"] or {}).items():
@@ -196,6 +216,58 @@ class Controller(QObject):
             self.sources.poke()
             self.toast.emit("Mikro-Durchleitung " + ("AN" if self.cfg["mic_passthrough"] else "AUS"), "info")
             self.settingsChanged.emit()
+
+    # ---------------------------------------------------------- Profile pro Spiel
+    def profiles(self) -> list[dict]:
+        from .profiles import clean
+        return [clean(p) for p in (self.cfg["profiles"] or [])]
+
+    def save_profiles(self, profs: list[dict]):
+        self.cfg["profiles"] = profs
+        if self.cfg["profile_manual"] and not any(p["id"] == self.cfg["profile_manual"] for p in profs):
+            self.cfg["profile_manual"] = ""
+        cur = (self.profile or {}).get("id", "")
+        if cur and not any(p["id"] == cur for p in profs):
+            cur = ""
+        self.set_profile(cur, force=True)
+        self.profile_watch.poke()
+
+    def _profile_found(self, pid: str):
+        if not self.cfg["profile_manual"]:
+            self.set_profile(pid)
+
+    def choose_profile(self, pid: str):
+        """Von Hand waehlen ("" = wieder automatisch)."""
+        self.cfg["profile_manual"] = pid
+        if pid:
+            self.set_profile(pid)
+        else:
+            self.set_profile("")
+            self.profile_watch.poke()
+
+    def wheel_source(self) -> str:
+        return (self.profile or {}).get("wheel_source") or self.cfg.get("wheel_source", "fav")
+
+    def set_profile(self, pid: str, force: bool = False):
+        prof = next((p for p in self.profiles() if p["id"] == pid), None) if pid else None
+        if not force and (prof or {}).get("id") == (self.profile or {}).get("id"):
+            return
+        if self._profile_voice is not None:          # Stimme vom vorigen Profil zuruecknehmen
+            en, pre = self._profile_voice
+            self._profile_voice = None
+            self.set_voice(pre, en, quiet=True)
+        self.profile = prof
+        if prof and prof.get("voice"):
+            from .effects import VOICE_PRESETS
+            self._profile_voice = (bool(self.cfg["voice_enabled"]), self.cfg["voice_preset"])
+            if prof["voice"] == "off":
+                self.set_voice(enabled=False, quiet=True)
+            elif prof["voice"] in VOICE_PRESETS:
+                self.set_voice(prof["voice"], True, quiet=True)
+        self.apply_hotkeys()
+        self.profileChanged.emit(dict(prof or {}))
+        if not force:
+            self.toast.emit(f"🎮 Profil: {prof['name']}" if prof else "🎮 Profil: Standard", "info")
 
     # ---------------------------------------------------------- Aktionen
     def play_sound(self, sid: str):
@@ -528,8 +600,26 @@ class Controller(QObject):
         else:
             self.toast.emit("📋 Clip kopiert – in Discord mit Strg+V einfügen", "ok")
 
+    def _helper_cmd(self, text: str):
+        from .host import HelperHost
+        HelperHost.get().command(text)
+
+    def voice_apps(self) -> set[str]:
+        """Apps, in denen deine Freunde reden (Discord, Voice-Chat im Spiel, WhatsApp ...)."""
+        return {str(a).lower() for a in (self.cfg["voice_chat_apps"] or [])}
+
+    def _duck_factor(self, exe: str) -> float:
+        """Wie leise eine App gerade durchs Ducking ist (fuer den Ohrenschutz)."""
+        if not self._ducked or (exe in self.voice_apps() and not self.cfg["duck_discord"]):
+            return 1.0
+        return max(0.05, float(self.cfg["duck_level"]))
+
     def _duck_tick(self):
         import time as _t
+        try:
+            self.guard.tick()
+        except Exception:
+            log.exception("Ohrenschutz")
         if self.cfg["voice_enabled"]:           # Statistik: wie lange mit welcher Stimme
             nowv = _t.time()
             if self._voice_tick and nowv - self._voice_tick < 1.0:
@@ -547,7 +637,7 @@ class Controller(QObject):
         if want:
             self._duck_quiet_since = 0.0
             if not self._ducked:
-                skip = [] if self.cfg["duck_discord"] else ["discord.exe", "discordptb.exe", "discordcanary.exe"]
+                skip = [] if self.cfg["duck_discord"] else sorted(self.voice_apps())
                 from .host import HelperHost
                 HelperHost.get().command(f"duck {float(self.cfg['duck_level']):.2f} {','.join(skip) or '-'}")
                 self._ducked = True
@@ -618,7 +708,7 @@ class Controller(QObject):
 
     def _activity(self, key: str, data):
         """Mikro oder Discord aktiv (jemand redet)? Dann kein automatisches Update - sonst bricht der Call kurz ab."""
-        if key == "mic" or "discord" in key:
+        if key == "mic" or (key.startswith("app:") and key[4:].lower() in self.voice_apps()):
             try:
                 if len(data) and float(abs(data).max()) > 0.03:
                     self._last_busy = time.time()

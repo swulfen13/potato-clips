@@ -126,6 +126,21 @@ def wrapped_test():
     win.tabs.setCurrentWidget(win.wrapped)
 
 
+def voice_apps_check():
+    st = win.settings
+    st._fill_vc_menu()
+    labels = [a.text() for a in st.vc_menu.actions()]
+    st._set_vc("fortniteclient-win64-shipping.exe", True)
+    ok1 = "fortniteclient-win64-shipping.exe" in ctl.voice_apps() and "Fortnite" in st.vc_btn.text()
+    st._set_vc("fortniteclient-win64-shipping.exe", False)
+    ctl._ducked = True
+    f = ctl._duck_factor("fortniteclient-win64-shipping.exe")
+    ctl._ducked = False
+    print("CHECK Voice-Chat-Apps:", "OK" if ok1 and "Discord" in st.vc_btn.text()
+          and "fortniteclient-win64-shipping.exe" not in ctl.voice_apps() and len(labels) > 10 and f < 1 else "FEHLER",
+          st.vc_btn.text())
+
+
 def wrapped_check():
     pm = win.wrapped.view.pixmap()
     print("CHECK Wrapped-Seite:", "OK" if pm is not None and not pm.isNull() and ctl.stats.summary()["plays"] >= 1
@@ -365,6 +380,7 @@ step(100, make_clip)
 step(1200, open_clip)
 step(800, shot("2_clips"))
 step(100, clip_search_test)
+step(100, voice_apps_check)
 step(100, wrapped_test)
 step(800, wrapped_check)
 step(100, shot("8_wrapped"))

@@ -206,7 +206,17 @@ class SettingsTab(QWidget):
         self.virtual = QComboBox()
         self.virtual.setMinimumWidth(240)
         self.virtual.setMaximumWidth(340)
-        self._row(sec, "Virtuelles Mikrofon", "In Discord als Eingabe „CABLE Output“ wählen", self.virtual)
+        self._row(sec, "Virtuelles Mikrofon", "In Discord, im Spiel-Voice-Chat oder WhatsApp als Mikrofon "
+                  "„CABLE Output“ wählen", self.virtual)
+        self.vc_btn = QPushButton()
+        self.vc_btn.setMinimumWidth(240)
+        self.vc_btn.setMaximumWidth(340)
+        self.vc_menu = QMenu(self.vc_btn)
+        self.vc_menu.aboutToShow.connect(self._fill_vc_menu)
+        self.vc_btn.setMenu(self.vc_menu)
+        self._vc_label()
+        self._row(sec, "Voice-Chat-Apps", "Wo deine Freunde reden – z. B. Discord, Fortnite, WhatsApp. Diese Apps "
+                  "werden beim Ducking verschont und nie als Musik an den Chat geschickt", self.vc_btn)
         info = QWidget()
         il = QVBoxLayout(info)
         il.setContentsMargins(20, 0, 20, 12)
@@ -439,7 +449,8 @@ class SettingsTab(QWidget):
         self.duck_dc = ToggleSwitch()
         self.duck_dc.setChecked(cfg["duck_discord"])
         self.duck_dc.toggled.connect(lambda v: cfg.__setitem__("duck_discord", v))
-        self._row(sec, "Auch Discord leiser machen", "Aus = deine Freunde bleiben immer gleich laut", self.duck_dc)
+        self._row(sec, "Auch Voice-Chats leiser machen", "Aus = deine Freunde (Discord, Voice-Chat im Spiel …) "
+                  "bleiben immer gleich laut", self.duck_dc)
         self.norm_sw = ToggleSwitch()
         self.norm_sw.setChecked(bool(cfg["normalize_sounds"]))
         self.norm_sw.toggled.connect(lambda v: cfg.__setitem__("normalize_sounds", v))
@@ -1103,6 +1114,73 @@ class SettingsTab(QWidget):
         self.ctl.sources.poke()
         if self.ac_sw.isChecked() and self.sender() is self.ac_sw:
             self.ctl.toast.emit("🔥 Auto-Clip an – laute Momente werden automatisch gespeichert", "ok")
+
+    # ---- Voice-Chat-Apps
+    KNOWN_VOICE = [("discord.exe", "Discord"), ("fortniteclient-win64-shipping.exe", "Fortnite"),
+                   ("whatsapp.root.exe", "WhatsApp"), ("whatsapp.exe", "WhatsApp (alt)"),
+                   ("teamspeak.exe", "TeamSpeak"), ("ts3client_win64.exe", "TeamSpeak 3"),
+                   ("valorant-win64-shipping.exe", "Valorant"), ("cs2.exe", "Counter-Strike 2"),
+                   ("r5apex.exe", "Apex Legends"), ("discovery-d.exe", "THE FINALS"), ("steam.exe", "Steam-Chat"),
+                   ("ms-teams.exe", "Teams"), ("zoom.exe", "Zoom"), ("telegram.exe", "Telegram"),
+                   ("skype.exe", "Skype"), ("mumble.exe", "Mumble")]
+
+    def _vc_name(self, exe: str) -> str:
+        from ..capture import pretty_app_name
+        return dict(self.KNOWN_VOICE).get(exe) or pretty_app_name(exe)
+
+    def _vc_label(self):
+        cur = list(self.ctl.cfg["voice_chat_apps"] or [])
+        names = []
+        for e in cur:
+            n = self._vc_name(e)
+            if e in ("discordptb.exe", "discordcanary.exe") and "Discord" in names:
+                continue
+            if n not in names:
+                names.append(n)
+        self.vc_btn.setText(", ".join(names) if names else tr_text("Keine – bitte auswählen"))
+
+    def _fill_vc_menu(self):
+        m = self.vc_menu
+        m.clear()
+        cur = {e.lower() for e in (self.ctl.cfg["voice_chat_apps"] or [])}
+        items = list(self.KNOWN_VOICE)
+        known = {e for e, _ in items}
+        for key, label in sorted(self.ctl.app_labels().items(), key=lambda kv: kv[1].lower()):
+            exe = key[4:].split("#")[0].lower() if key.startswith("app:") else ""
+            if exe and exe not in known and exe != "potatoclips.exe":
+                items.append((exe, label + "  " + tr_text("(läuft gerade)")))
+                known.add(exe)
+        items += [(e, self._vc_name(e)) for e in sorted(cur) if e not in known
+                  and e not in ("discordptb.exe", "discordcanary.exe")]
+        for exe, label in items:
+            a = m.addAction(label)
+            a.setCheckable(True)
+            a.setChecked(exe in cur)
+            a.toggled.connect(lambda v, e=exe: self._set_vc(e, v))
+        m.addSeparator()
+        other = m.addAction(tr_text("Andere App (Programmname) …"))
+        other.triggered.connect(self._add_vc_other)
+
+    def _set_vc(self, exe: str, on: bool):
+        cur = [e for e in (self.ctl.cfg["voice_chat_apps"] or []) if e.lower() != exe]
+        if exe == "discord.exe":
+            cur = [e for e in cur if e not in ("discordptb.exe", "discordcanary.exe")]
+        if on:
+            cur.append(exe)
+            if exe == "discord.exe":
+                cur += ["discordptb.exe", "discordcanary.exe"]
+        self.ctl.cfg["voice_chat_apps"] = cur
+        self._vc_label()
+        self.ctl.sources.poke()
+
+    def _add_vc_other(self):
+        from PySide6.QtWidgets import QInputDialog
+        from ..profiles import norm_exe
+        name, ok = QInputDialog.getText(self, tr_text("Voice-Chat-App"),
+                                        tr_text("Programmname, z. B. „RainbowSix.exe“ (steht im Task-Manager unter Details):"))
+        exe = norm_exe(name)
+        if ok and exe:
+            self._set_vc(exe, True)
 
     def _ac_label(self):
         apps = self.ctl.autoclip.apps()

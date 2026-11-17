@@ -379,6 +379,7 @@ class MainWindow(QMainWindow):
             return
         self.quitting = True
         self.clips.shutdown()
+        self.wheel.cancel()
         self.overlay.hide()
         self.tray.hide()
         self.ctl.shutdown()

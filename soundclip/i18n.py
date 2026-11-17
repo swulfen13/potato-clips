@@ -555,6 +555,20 @@ _NEW12.update({
     "Das Backup ist ungewöhnlich groß – wird aus Sicherheitsgründen nicht eingespielt.":
         "The backup is unusually large – it won't be restored for safety reasons.",
     "Nicht genug freier Speicherplatz für das Backup.": "Not enough free disk space for the backup.",
+    # 1.6: Voice-Chat-Apps
+    "In Discord, im Spiel-Voice-Chat oder WhatsApp als Mikrofon „CABLE Output“ wählen":
+        "Pick “CABLE Output” as the microphone in Discord, in-game voice chat or WhatsApp",
+    "Voice-Chat-Apps": "Voice chat apps",
+    "Wo deine Freunde reden – z. B. Discord, Fortnite, WhatsApp. Diese Apps werden beim Ducking verschont und nie als Musik an den Chat geschickt":
+        "Where your friends talk – e.g. Discord, Fortnite, WhatsApp. These apps are spared by ducking and never sent to the chat as music",
+    "Auch Voice-Chats leiser machen": "Also lower voice chats",
+    "Aus = deine Freunde (Discord, Voice-Chat im Spiel …) bleiben immer gleich laut":
+        "Off = your friends (Discord, in-game voice chat …) always stay at the same volume",
+    "(läuft gerade)": "(running now)", "Andere App (Programmname)": "Other app (program name)",
+    "Voice-Chat-App": "Voice chat app",
+    "Programmname, z. B. „RainbowSix.exe“ (steht im Task-Manager unter Details):":
+        "Program name, e.g. “RainbowSix.exe” (shown in Task Manager under Details):",
+    "Steam-Chat": "Steam chat", "WhatsApp (alt)": "WhatsApp (old)",
 })
 for _k, _v in _NEW12.items():
     EN[_k] = _v

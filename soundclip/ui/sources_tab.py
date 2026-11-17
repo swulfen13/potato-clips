@@ -25,7 +25,7 @@ def _icon(key: str, kind: str) -> str:
 
 
 class SourceRow(QWidget):
-    def __init__(self, key: str, info: dict):
+    def __init__(self, key: str, info: dict, voice_apps=()):
         super().__init__()
         self.key = key
         lay = QHBoxLayout(self)
@@ -54,7 +54,7 @@ class SourceRow(QWidget):
         self.route = None
         self.route_gain = None
         exe = key[4:].split("#")[0] if key.startswith("app:") else ""
-        if info["kind"] == "process" and not exe.startswith("discord"):
+        if info["kind"] == "process" and exe.lower() not in voice_apps:
             col = QVBoxLayout()
             col.setSpacing(2)
             self.route = ToggleSwitch("→ Discord")
@@ -248,7 +248,7 @@ class SourcesTab(QWidget):
             r.deleteLater()
         self.rows = {}
         for key, info in avail.items():
-            row = SourceRow(key, info)
+            row = SourceRow(key, info, self.ctl.voice_apps())
             row.clip.setChecked(mode_all or key in sel)
             row.clip.setEnabled(not mode_all)
             row.clip.toggled.connect(lambda v, k=key: self._sel_toggle(k, v))

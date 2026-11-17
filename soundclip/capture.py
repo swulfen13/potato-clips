@@ -45,6 +45,7 @@ PRETTY_NAMES = {
     "whatsapp.root.exe": "WhatsApp", "epicgameslauncher.exe": "Epic Games", "audacity.exe": "Audacity",
     "audacity4.exe": "Audacity", "claude.exe": "Claude", "telegram.exe": "Telegram", "zoom.exe": "Zoom",
     "ms-teams.exe": "Teams", "medal.exe": "Medal", "battle.net.exe": "Battle.net", "riotclientservices.exe": "Riot Client",
+    "mumble.exe": "Mumble", "skype.exe": "Skype", "signal.exe": "Signal", "discovery-d.exe": "THE FINALS", "discovery.exe": "THE FINALS",
 }
 
 

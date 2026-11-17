@@ -19,7 +19,7 @@ DEAD_ZONE = 40          # so weit (in Pixeln Mausbewegung) muss man in eine Rich
 
 def wheel_items(ctl) -> list[dict]:
     """Bis zu 8 Sounds: aus dem gewaehlten Ordner, sonst Favoriten zuerst."""
-    src = ctl.cfg.get("wheel_source", "fav")
+    src = ctl.wheel_source() if hasattr(ctl, "wheel_source") else ctl.cfg.get("wheel_source", "fav")
     sounds = list(ctl.sounds.sounds)
     if src not in ("", "fav"):
         sel = [s for s in sounds if s.get("folder", "") == src]

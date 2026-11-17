@@ -221,6 +221,13 @@ while time.time() - t0 < 0.2:
 check("Rad Notbremse nach 8 s", not wheel.isVisible())
 wheel.hold(False)
 
+# Voice-Chat-Apps statt fest Discord
+from soundclip.config import DEFAULTS  # noqa: E402
+check("Voice-Chat-Apps Standard = Discord", "discord.exe" in DEFAULTS["voice_chat_apps"])
+from soundclip import profiles as prmod  # noqa: E402
+check("Programmname normalisieren", prmod.norm_exe(" Fortnite ") == "fortnite.exe" and prmod.norm_exe("a\\b.exe") == ""
+      and prmod.norm_exe("app:WhatsApp.Root.exe") == "whatsapp.root.exe")
+
 # ---------------------------------------------------------------- 5) Backup
 from soundclip import backup  # noqa: E402
 from soundclip.config import DATA_DIR  # noqa: E402
@@ -334,4 +341,12 @@ for fmt, style in (("9:16", "pro"), ("16:9", "potato")):
             os.remove(mp4)
 
 print("ALLES OK" if ok else "ES GIBT FEHLER", flush=True)
-sys.exit(0 if ok else 1)
+# Qt-Objekte geordnet abbauen, bevor Python beendet wird (sonst kann der Abbau in falscher Reihenfolge abstuerzen)
+wheel.close()
+wheel.deleteLater()
+wctl.deleteLater()
+app.processEvents()
+inputs.shared().shutdown()
+time.sleep(0.2)
+sys.stdout.flush()
+os._exit(0 if ok else 1)
