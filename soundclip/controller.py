@@ -55,6 +55,7 @@ class Controller(QObject):
     wheelHold = Signal(bool)                  # Sound-Rad: Taste gedrueckt / losgelassen
     profileFound = Signal(str)                # Spiel erkannt (aus dem Hintergrund-Thread): Profil-id oder ""
     profileChanged = Signal(dict)             # aktives Profil ({} = Standard)
+    wheelChanged = Signal()                   # Sound-Rad-Seiten geaendert
 
     def __init__(self):
         super().__init__()
@@ -247,6 +248,42 @@ class Controller(QObject):
 
     def wheel_source(self) -> str:
         return (self.profile or {}).get("wheel_source") or self.cfg.get("wheel_source", "fav")
+
+    def save_wheel(self, pages: list[dict], use: bool = True):
+        """Eigene Rad-Seiten speichern; use=True schaltet das Rad auf "Eigene Auswahl"."""
+        from .ui.wheel import clean_pages
+        pages = clean_pages(pages)
+        filled = any(any(pg["slots"]) for pg in pages)
+        self.cfg["wheel_pages"] = pages
+        if use and filled:
+            self.cfg["wheel_source"] = "custom"
+        elif not filled and str(self.cfg.get("wheel_source", "")).startswith(("custom", "page:")):
+            self.cfg["wheel_source"] = "fav"
+        self.wheelChanged.emit()
+
+    def wheel_add(self, sid: str, page: int | None) -> str:
+        """Sound ins erste freie Feld einer Seite legen (page=None: neue Seite). Gibt die Seite zurueck."""
+        from .ui.wheel import MAX_ITEMS, MAX_PAGES, clean_pages
+        pages = clean_pages(self.cfg.get("wheel_pages"))
+        if page is None or page >= len(pages):
+            if len(pages) >= MAX_PAGES:
+                self.toast.emit("Sound-Rad: höchstens 8 Seiten", "warn")
+                return ""
+            from .i18n import tr
+            pages.append({"name": tr("Seite {n}").format(n=len(pages) + 1), "slots": [""] * MAX_ITEMS})
+            page = len(pages) - 1
+        slots = pages[page]["slots"]
+        name = pages[page]["name"]
+        if sid in slots:
+            self.toast.emit(f"Schon auf dem Sound-Rad: {name}", "info")
+            return name
+        if "" not in slots:
+            self.toast.emit(f"{name} ist voll – im Sound-Rad-Editor Platz machen", "warn")
+            return ""
+        slots[slots.index("")] = sid
+        self.save_wheel(pages)
+        self.toast.emit(f"🎡 Aufs Sound-Rad gelegt: {name}", "ok")
+        return name
 
     def set_profile(self, pid: str, force: bool = False):
         prof = next((p for p in self.profiles() if p["id"] == pid), None) if pid else None

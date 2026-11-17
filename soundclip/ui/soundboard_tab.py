@@ -797,6 +797,21 @@ class SoundboardTab(QWidget):
             f_acts[fm.addAction("Aus dem Ordner nehmen")] = ""
         fm.addSeparator()
         a_newf = fm.addAction("+ Neuer Ordner…")
+        wm = m.addMenu("🎡 Aufs Sound-Rad")
+        from .wheel import MAX_PAGES, clean_pages
+        w_acts = {}
+        pages = clean_pages(self.ctl.cfg.get("wheel_pages"))
+        for i, pg in enumerate(pages):
+            n = sum(1 for x in pg["slots"] if x)
+            a = wm.addAction(("✓ " if sid in pg["slots"] else "") + f"{pg['name']}  ({n}/8)")
+            a.setEnabled(sid in pg["slots"] or n < 8)
+            w_acts[a] = i
+        if pages:
+            wm.addSeparator()
+        a_wnew = wm.addAction("+ Neue Seite")
+        a_wnew.setEnabled(len(pages) < MAX_PAGES)
+        w_acts[a_wnew] = None
+        a_wedit = wm.addAction("Sound-Rad einrichten …")
         a_trim = m.addAction("✂ Zuschneiden…")
         a_fx = m.addAction("Im Clip-Editor bearbeiten (Effekte)")
         a_link = m.addAction("🔗 Link für Stream Deck kopieren")
@@ -820,6 +835,11 @@ class SoundboardTab(QWidget):
             self.refresh()
         elif act == a_newf:
             self._new_folder(sid)
+        elif act in w_acts:
+            self.ctl.wheel_add(sid, w_acts[act])
+        elif act == a_wedit:
+            from .wheel_editor import WheelEditor
+            WheelEditor(self.ctl, self).exec()
         elif act == a_trim:
             try:
                 dlg = TrimDialog(self.ctl, s, self)

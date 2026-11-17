@@ -116,6 +116,7 @@ DEFAULTS: dict = {
     "video_post": False,              # Video danach in Discord posten
     "video_subs": True,               # Untertitel im Video (wenn das Sprachpaket da ist)
     "clip_transcribe": False,
+    "wheel_pages": [],                # eigene Sound-Rad-Seiten: [{"name", "slots": [sound_id, ...x8]}]
     "discord_webhook": "",            # Clips direkt in einen Discord-Kanal posten
     "voice_chat_apps": ["discord.exe", "discordptb.exe", "discordcanary.exe"],   # Apps, in denen Freunde reden
     "profiles": [],                   # Profile pro Spiel (siehe profiles.py)

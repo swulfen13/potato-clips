@@ -60,8 +60,9 @@
 - **Clips durchsuchen:** Clips offline in Text umwandeln und nach gesagten Wörtern suchen.
 - **Maus- & Controller-Tasten:** Seitentasten (Maus 4/5), Mausrad-Klick und Xbox-Controller-Knöpfe (auch Kombis
   wie LB+A) als Hotkey – auch mit Strg/Alt/Shift. Die Maus wird dabei nur „mitgehört“, nie ausgebremst.
-- **Sound-Rad:** Taste halten, Maus in eine Richtung ziehen, loslassen – der Sound spielt. Bis zu 8 Sounds
-  (Favoriten oder ein Ordner), ideal im Spiel.
+- **Sound-Rad:** Taste halten, Maus in eine Richtung ziehen, loslassen – der Sound spielt. Im Sound-Rad-Editor
+  legst du selbst fest, was auf welchem der 8 Felder liegt – auf bis zu 8 Seiten, zwischen denen du beim Halten
+  mit dem Mausrad blätterst (wie bei den Emotes in Fortnite). Alternativ: Favoriten oder ein Ordner.
 - **Effekte pro Sound:** Jedem Sound einen eigenen Effekt geben (Helium-Furz, Dämonen-Lachen …), mit Stärke und
   Vorhören.
 - **Potato Wrapped:** Deine Statistik (Top-Sounds, Clips, Lieblings-Stimme …) als Bild zum Teilen – bleibt lokal.

@@ -1,7 +1,8 @@
 """Sound-Rad: Taste gedrueckt halten -> rundes Menue ueber dem Spiel, Maus in eine Richtung, loslassen = Sound.
 
 Die Richtung kommt aus der rohen Mausbewegung (Raw Input) - das klappt auch in Spielen, die den Mauszeiger
-festhalten. Ohne Raw Input wird die Zeigerposition benutzt."""
+festhalten. Ohne Raw Input wird die Zeigerposition benutzt. Mit dem Mausrad blaettert man zwischen mehreren
+Seiten (wie bei den Emotes in Fortnite). Was auf welcher Seite liegt, legt man im Sound-Rad-Editor fest."""
 from __future__ import annotations
 
 import math
@@ -13,20 +14,68 @@ from PySide6.QtWidgets import QWidget
 from . import theme
 from .theme import P
 
-MAX_ITEMS = 8
+MAX_ITEMS = 8          # Felder pro Seite
+MAX_PAGES = 8
 DEAD_ZONE = 40          # so weit (in Pixeln Mausbewegung) muss man in eine Richtung, bevor etwas gewaehlt ist
 
 
-def wheel_items(ctl) -> list[dict]:
-    """Bis zu 8 Sounds: aus dem gewaehlten Ordner, sonst Favoriten zuerst."""
+def clean_pages(pages) -> list[dict]:
+    """Eigene Rad-Seiten aus der Konfiguration absichern: [{"name", "slots": [sound_id oder "", x8]}]."""
+    out = []
+    for pg in (pages if isinstance(pages, list) else []):
+        if not isinstance(pg, dict):
+            continue
+        slots = [str(x or "") for x in (pg.get("slots") or [])][:MAX_ITEMS]
+        slots += [""] * (MAX_ITEMS - len(slots))
+        if not pg.get("name"):
+            from ..i18n import tr
+            pg = {**pg, "name": tr("Seite {n}").format(n=len(out) + 1)}
+        out.append({"name": str(pg["name"])[:24], "slots": slots})
+        if len(out) >= MAX_PAGES:
+            break
+    return out
+
+
+def wheel_pages(ctl) -> list[dict]:
+    """Seiten fuers Rad: [{"name", "items": [sound-dict oder None, ...]}].
+    "custom" = eigene Auswahl aus dem Editor; Ordner/Favoriten werden automatisch auf Seiten verteilt."""
     src = ctl.wheel_source() if hasattr(ctl, "wheel_source") else ctl.cfg.get("wheel_source", "fav")
     sounds = list(ctl.sounds.sounds)
+    by_id = {s["id"]: s for s in sounds}
+    if src == "custom" or src.startswith("page:"):
+        allp = clean_pages(ctl.cfg.get("wheel_pages"))
+        if src.startswith("page:"):                 # Profil: nur eine bestimmte Seite
+            try:
+                allp = [allp[int(src[5:])]]
+            except (ValueError, IndexError):
+                allp = []
+        pages = []
+        for pg in allp:
+            items = [by_id.get(x) for x in pg["slots"]]
+            if any(items):
+                # leere Felder am Ende weglassen, damit z. B. 3 Sounds ein 3er-Rad ergeben
+                while items and items[-1] is None:
+                    items.pop()
+                pages.append({"name": pg["name"], "items": items})
+        if pages:
+            return pages
+        src = "fav"
     if src not in ("", "fav"):
         sel = [s for s in sounds if s.get("folder", "") == src]
-        if sel:
-            return sel[:MAX_ITEMS]
-    sounds.sort(key=lambda s: not s.get("fav"))
-    return sounds[:MAX_ITEMS]
+        name = src
+    else:
+        sel = sorted(sounds, key=lambda s: not s.get("fav"))      # Favoriten zuerst, dann der Rest
+        name = ""
+    pages = []
+    for i in range(0, min(len(sel), MAX_ITEMS * MAX_PAGES), MAX_ITEMS):
+        pages.append({"name": name, "items": sel[i:i + MAX_ITEMS]})
+    return pages
+
+
+def wheel_items(ctl) -> list[dict]:
+    """Erste Seite (fuer alte Aufrufer/Tests)."""
+    pages = wheel_pages(ctl)
+    return [x for x in pages[0]["items"] if x] if pages else []
 
 
 class SoundWheel(QWidget):
@@ -36,8 +85,10 @@ class SoundWheel(QWidget):
         self.ctl = ctl
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setFixedSize(480, 480)
-        self.items: list[dict] = []
+        self.setFixedSize(480, 524)
+        self.items: list = []
+        self.pages: list[dict] = []
+        self.page = 0
         self.sel = -1
         self._start = QPointF()
         self.timer = QTimer(self)
@@ -54,7 +105,12 @@ class SoundWheel(QWidget):
     def open(self):
         if self.isVisible():                    # Tasten-Wiederholung beim Halten -> nichts tun
             return
-        self.items = wheel_items(self.ctl)
+        self.pages = wheel_pages(self.ctl)
+        if self.pages:
+            self.page = min(getattr(self.ctl, "_wheel_page", 0), len(self.pages) - 1)   # wie zuletzt
+            self.items = self.pages[self.page]["items"]
+        else:
+            self.items = []
         if not self.items:
             import time
             if time.time() - getattr(self, "_warned", 0) > 3:
@@ -84,9 +140,23 @@ class SoundWheel(QWidget):
         if w is not None:
             w.track_motion(False)
         self.hide()
-        if 0 <= self.sel < len(self.items):
+        self.ctl._wheel_page = self.page
+        if 0 <= self.sel < len(self.items) and self.items[self.sel]:
             self.ctl.stats.add("wheel")
             self.ctl.play_sound(self.items[self.sel]["id"])
+
+    def turn(self, steps: int):
+        """Mausrad: Seite wechseln (runter = naechste Seite, rundherum)."""
+        if len(self.pages) < 2 or not steps:
+            return
+        self.page = (self.page - steps) % len(self.pages)
+        self.items = self.pages[self.page]["items"]
+        self.sel = -1
+        w = self._watcher()
+        if w is not None:                       # nach dem Blaettern neu zielen
+            w.dx = w.dy = 0
+        self._start = QPointF(QCursor.pos())
+        self.update()
 
     def cancel(self):
         """Schliessen, ohne etwas abzuspielen."""
@@ -126,6 +196,12 @@ class SoundWheel(QWidget):
         if age > 0.15 and not self._key_held():
             self.release()
             return
+        w = self._watcher()
+        if w is not None and hasattr(w, "take_wheel"):
+            st = w.take_wheel()
+            if st:
+                self._opened = time.time()          # beim Blaettern nicht in die 8-s-Notbremse laufen
+                self.turn(st)
         self._update_sel()
 
     def _update_sel(self):
@@ -153,7 +229,7 @@ class SoundWheel(QWidget):
         pot = theme.potato()
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        c = QPointF(self.width() / 2, self.height() / 2)
+        c = QPointF(self.width() / 2, 240.0)
         r_out, r_in = 220.0, 70.0
         span = 360.0 / n
         f = QFont(P.get("font_body", "Inter"))
@@ -170,6 +246,12 @@ class SoundWheel(QWidget):
             hole.addEllipse(c, r_in, r_in)
             path = path.subtracted(hole)
             on = i == self.sel
+            empty = s is None
+            if empty:
+                p.setPen(QPen(QColor("#111") if pot else QColor("#2C3038"), 2 if pot else 1.2, Qt.DashLine))
+                p.setBrush(QColor(255, 233, 77, 90) if pot else QColor(22, 24, 29, 150))
+                p.drawPath(path)
+                continue
             if pot:
                 fill = QColor("#FF3D8B") if on else QColor("#FFE94D")
                 pen = QPen(QColor("#111"), 3)
@@ -194,6 +276,23 @@ class SoundWheel(QWidget):
         f.setPixelSize(12)
         p.setFont(f)
         from ..i18n import tr
-        txt = self.items[self.sel]["name"] if self.sel >= 0 else tr("Richtung zeigen,\nloslassen = Sound")
+        cur = self.items[self.sel] if 0 <= self.sel < n else None
+        txt = cur["name"] if cur else tr("Richtung zeigen,\nloslassen = Sound")
         p.drawText(QRectF(c.x() - r_in + 10, c.y() - 30, 2 * r_in - 20, 60), Qt.AlignCenter | Qt.TextWordWrap, txt)
+        # Seiten: Name + Punkte unten
+        if len(self.pages) > 1 or (self.pages and self.pages[0]["name"]):
+            title = self.pages[self.page]["name"] or tr("Seite {n}").format(n=self.page + 1)
+            f.setPixelSize(14)
+            p.setFont(f)
+            box = QRectF(c.x() - 110, self.height() - 16 - 26, 220, 26)
+            p.setPen(Qt.NoPen if not pot else QPen(QColor("#111"), 2))
+            p.setBrush(QColor("#FFE94D") if pot else QColor(13, 14, 17, 225))
+            if pot:
+                p.drawRect(box)
+            else:
+                p.drawRoundedRect(box, 13, 13)
+            p.setPen(QColor("#111") if pot else QColor(P["text"]))
+            dots = "  " + " ".join("●" if i == self.page else "○" for i in range(len(self.pages))) \
+                if len(self.pages) > 1 else ""
+            p.drawText(box, Qt.AlignCenter, title + dots)
         p.end()

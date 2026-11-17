@@ -484,8 +484,12 @@ class SettingsTab(QWidget):
         self.wheel_src.currentIndexChanged.connect(
             lambda _: cfg.__setitem__("wheel_source", self.wheel_src.currentData() or "fav"))
         ctl.soundsChanged.connect(self._fill_wheel_src)
+        ctl.wheelChanged.connect(self._fill_wheel_src)
+        b_wheel = QPushButton("🎡 Sound-Rad einrichten …")
+        b_wheel.clicked.connect(self._edit_wheel)
         self._row(sec, "Sound-Rad zeigt", "Taste festlegen unter Hotkeys → „Sound-Rad“ (z. B. Maus 5). Halten, Maus in "
-                  "eine Richtung, loslassen = Sound – bis zu 8 Sounds", self.wheel_src)
+                  "eine Richtung, loslassen = Sound. Mehrere Seiten: beim Halten mit dem Mausrad blättern",
+                  [self.wheel_src, b_wheel])
         self.soundboard_section = sec
 
         # ================= Handy & Stream Deck
@@ -1160,10 +1164,19 @@ class SettingsTab(QWidget):
             self.auto.blockSignals(False)
             self.ctl.toast.emit(f"Autostart fehlgeschlagen: {e}", "warn")
 
+    def _edit_wheel(self):
+        from .wheel_editor import WheelEditor
+        WheelEditor(self.ctl, self).exec()
+
     def _fill_wheel_src(self, *_):
         cur = self.ctl.cfg.get("wheel_source", "fav")
         self.wheel_src.blockSignals(True)
         self.wheel_src.clear()
+        from .wheel import clean_pages
+        pages = [pg for pg in clean_pages(self.ctl.cfg.get("wheel_pages")) if any(pg["slots"])]
+        if pages:
+            self.wheel_src.addItem(tr_text("Eigene Auswahl ({n} Seiten)").format(n=len(pages))
+                                   if len(pages) > 1 else tr_text("Eigene Auswahl"), "custom")
         self.wheel_src.addItem(tr_text("Favoriten (und die ersten Sounds)"), "fav")
         for f in self.ctl.sounds.folders(self.ctl.cfg["sound_folders"] or []):
             self.wheel_src.addItem(tr_text("Ordner: ") + f, f)

@@ -615,6 +615,22 @@ _NEW12.update({
     "Der Webhook existiert nicht mehr oder wurde gelöscht.": "The webhook doesn't exist anymore or was deleted.",
     "Die Datei ist zu groß für Discord.": "The file is too big for Discord.",
     "Discord sagt: zu viele Nachrichten – kurz warten.": "Discord says: too many messages – wait a moment.",
+    # 1.7: eigenes Sound-Rad mit Seiten
+    "Sound-Rad einrichten …": "Set up sound wheel …", "Sound-Rad einrichten": "Set up sound wheel",
+    "Taste festlegen unter Hotkeys → „Sound-Rad“ (z. B. Maus 5). Halten, Maus in eine Richtung, loslassen = Sound. Mehrere Seiten: beim Halten mit dem Mausrad blättern":
+        "Set the key under Hotkeys → “Sound wheel” (e.g. Mouse 5). Hold, move the mouse in a direction, release = sound. Several pages: scroll the mouse wheel while holding",
+    "Eigene Auswahl": "Custom selection", "Eigene Auswahl ({n} Seiten)": "Custom selection ({n} pages)",
+    "Eigene Auswahl (alle Seiten)": "Custom selection (all pages)", "Nur Seite: ": "Only page: ",
+    "Aufs Sound-Rad": "Add to sound wheel", "+ Neue Seite": "+ New page",
+    "Feld im Rad anklicken, dann rechts einen Sound anklicken – danach geht es automatisch beim nächsten freien Feld weiter. Rechtsklick auf ein Feld = leeren. Im Spiel blätterst du mit dem Mausrad zwischen den Seiten, während du die Rad-Taste hältst.":
+        "Click a slot in the wheel, then click a sound on the right – it then moves on to the next free slot automatically. Right-click a slot = clear. In game you flip between pages with the mouse wheel while holding the wheel key.",
+    "Seiten": "Pages", "+ Seite": "+ Page", "Umbenennen": "Rename", "Seite nach vorne": "Move page up",
+    "Seite nach hinten": "Move page down", "Seite löschen": "Delete page", "Feld leeren": "Clear slot",
+    "Sounds": "Sounds", "Suchen …": "Search …", "Seite {n}": "Page {n}", "Seite umbenennen": "Rename page",
+    "Name der Seite:": "Page name:", "Seite „{n}“ löschen?": "Delete page “{n}”?", "Feld {n}: ": "Slot {n}: ",
+    "leer": "empty", "Feld wählen,\ndann Sound": "Pick a slot,\nthen a sound",
+    "Sound-Rad: höchstens 8 Seiten": "Sound wheel: at most 8 pages",
+    "Speichern": "Save",
 })
 for _k, _v in _NEW12.items():
     EN[_k] = _v
@@ -643,6 +659,10 @@ EN_PATTERNS += [(re.compile(a), b) for a, b in [
     (r"^Das ist keine gültige Backup-Datei \((.+)\)\.$", r"This is not a valid backup file (\1)."),
     (r"^Ordner: (.+)$", r"Folder: \1"),
     (r"^🎮 Profil: (.+)$", r"🎮 Profile: \1"),
+    (r"^🎡 Aufs Sound-Rad gelegt: (.+)$", r"🎡 Added to sound wheel: \1"),
+    (r"^Schon auf dem Sound-Rad: (.+)$", r"Already on the sound wheel: \1"),
+    (r"^(.+) ist voll – im Sound-Rad-Editor Platz machen$", r"\1 is full – make room in the sound wheel editor"),
+    (r"^Seite (\d+)$", r"Page \1"),
     (r"^Discord: (.+)$", r"Discord: \1"),
     (r"^Discord-Fehler (\d+)$", r"Discord error \1"),
     (r"^Keine Verbindung zu Discord \((.+)\)\.$", r"No connection to Discord (\1)."),

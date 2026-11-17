@@ -44,6 +44,13 @@ class ProfileDialog(QDialog):
         lay.addRow(tr("Sound-Hotkeys"), self.folder)
         self.wheel = QComboBox()
         self.wheel.addItem(tr("Wie in den Einstellungen"), "")
+        from .wheel import clean_pages
+        pages = clean_pages(ctl.cfg.get("wheel_pages"))
+        if any(any(pg["slots"]) for pg in pages):
+            self.wheel.addItem(tr("Eigene Auswahl (alle Seiten)"), "custom")
+            for i, pg in enumerate(pages):
+                if any(pg["slots"]):
+                    self.wheel.addItem(tr("Nur Seite: ") + pg["name"], f"page:{i}")
         self.wheel.addItem(tr("Favoriten (und die ersten Sounds)"), "fav")
         for f in folders:
             self.wheel.addItem(tr("Ordner: ") + f, f)
@@ -58,6 +65,8 @@ class ProfileDialog(QDialog):
         self._select(self.voice, self.prof.get("voice", ""))
         lay.addRow(tr("Stimme"), self.voice)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.button(QDialogButtonBox.Ok).setText(tr("Speichern"))
+        bb.button(QDialogButtonBox.Cancel).setText(tr("Abbrechen"))
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         lay.addRow(bb)

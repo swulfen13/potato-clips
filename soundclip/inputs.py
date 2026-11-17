@@ -85,6 +85,7 @@ RIDEV_INPUTSINK = 0x00000100
 RID_INPUT = 0x10000003
 RIM_TYPEMOUSE = 0
 HWND_MESSAGE = wintypes.HWND(-3)
+RI_MOUSE_WHEEL = 0x0400
 _RI_FLAGS = {0x0010: ("middle", True), 0x0020: ("middle", False), 0x0040: ("x1", True), 0x0080: ("x1", False),
              0x0100: ("x2", True), 0x0200: ("x2", False)}
 
@@ -188,6 +189,7 @@ class InputWatcher:
         self.tracking = False          # Sound-Rad: Mausbewegung mitzaehlen (auch wenn das Spiel den Zeiger festhaelt)
         self.dx = 0
         self.dy = 0
+        self.wheel = 0                 # Mausrad-Drehung seit dem letzten Abholen (120 = eine Raste)
         self.mouse_ok = False
 
     # ---- Steuerung
@@ -197,9 +199,16 @@ class InputWatcher:
 
     def track_motion(self, on: bool):
         self.dx = self.dy = 0
+        self.wheel = 0
         self.tracking = on
         if on:
             self._ensure(mouse=True)
+
+    def take_wheel(self) -> int:
+        """Ganze Mausrad-Rasten seit dem letzten Aufruf (+ = vom Nutzer weg / nach oben)."""
+        steps = int(self.wheel / 120)
+        self.wheel -= steps * 120
+        return steps
 
     def start_capture(self, fn):
         self.capture = fn
@@ -293,6 +302,8 @@ class InputWatcher:
                         if self.tracking and not (buf.mouse.usFlags & 0x01):     # relative Bewegung
                             self.dx += buf.mouse.lLastX
                             self.dy += buf.mouse.lLastY
+                        if self.tracking and flags & RI_MOUSE_WHEEL:              # Mausrad (Sound-Rad-Seiten)
+                            self.wheel += ctypes.c_short(buf.mouse.usButtonData).value
                         if flags:
                             for bit, (btn, down) in _RI_FLAGS.items():
                                 if flags & bit:

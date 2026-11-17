@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import _testenv  # noqa: E402,F401  (eigener Datenordner, nur lautlose Geraete)
 import numpy as np
 from pathlib import Path
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 
@@ -124,6 +124,7 @@ def wrapped_test():
     ctl.play_sound(s1["id"])
     ctl.stats.add("clips", 2)
     win.tabs.setCurrentWidget(win.wrapped)
+    prof_state["after_set"] = type(win.stack.currentWidget()).__name__
 
 
 def voice_apps_check():
@@ -160,10 +161,43 @@ def profile_check():
     print("CHECK Profile:", "OK" if ok1 and ok2 else "FEHLER", p.get("name"), ok1, ok2)
 
 
+def wheel_editor_test():
+    from soundclip.ui.wheel_editor import WheelEditor
+    ed = WheelEditor(ctl, win)
+    ed.show()
+    ids = [x["id"] for x in ctl.sounds.sounds][:2]
+    ed._pick_slot(0)
+    ed._set_slot(0, ids[0], advance=True)
+    ed._add_page()
+    ed.pages[1]["name"] = "Zweite"
+    ed._set_slot(0, ids[-1], advance=True)
+    prof_state["ed"] = ed
+
+
+def wheel_editor_check():
+    ed = prof_state.pop("ed")
+    ed.grab().save(os.path.join(OUT, "9_rad_editor.png"))
+    ed._save()
+    from soundclip.ui.wheel import wheel_pages
+    pages = wheel_pages(ctl)
+    sid = ctl.sounds.sounds[0]["id"]
+    name = ctl.wheel_add(sid, None)                 # aus dem Soundboard-Menue: neue Seite
+    pages2 = wheel_pages(ctl)
+    combo = [win.settings.wheel_src.itemData(i) for i in range(win.settings.wheel_src.count())]
+    print("CHECK Rad-Editor:", "OK" if ctl.cfg["wheel_source"] == "custom" and len(pages) == 2
+          and pages[1]["name"] == "Zweite" and len(pages2) == 3 and name and "custom" in combo else "FEHLER",
+          [p["name"] for p in pages2], combo[:2])
+    ctl.save_wheel([], use=False)
+    print("CHECK Rad zurueck:", "OK" if ctl.cfg["wheel_source"] == "fav" else "FEHLER")
+
+
 def wrapped_check():
     pm = win.wrapped.view.pixmap()
-    print("CHECK Wrapped-Seite:", "OK" if pm is not None and not pm.isNull() and ctl.stats.summary()["plays"] >= 1
-          else "FEHLER")
+    plays = ctl.stats.summary()["plays"]
+    print("CHECK Wrapped-Seite:", "OK" if pm is not None and not pm.isNull() and plays >= 1 else "FEHLER",
+          "pixmap:", None if pm is None else (pm.isNull(), pm.width()), "plays:", plays,
+          "sichtbar:", win.wrapped.isVisible(), win.isVisible(), win.isMinimized(),
+          type(win.stack.currentWidget()).__name__, prof_state.get("after_set"))
 
 
 def remote_test():
@@ -402,6 +436,8 @@ step(100, clip_search_test)
 step(100, voice_apps_check)
 step(100, profile_start)
 step(4500, profile_check)
+step(100, wheel_editor_test)
+step(600, wheel_editor_check)
 step(100, wrapped_test)
 step(800, wrapped_check)
 step(100, shot("8_wrapped"))
@@ -437,8 +473,14 @@ step(800, wizard_lang_test)
 step(2500, finish)
 
 acc = 0
+_timers = []
 for d, fn in steps:
     acc += d
-    QTimer.singleShot(acc, fn)
+    _t = QTimer()                                 # genaue Timer: grobe duerfen ~5 % abweichen -> Reihenfolge
+    _t.setTimerType(Qt.PreciseTimer)
+    _t.setSingleShot(True)
+    _t.timeout.connect(fn)
+    _t.start(acc)
+    _timers.append(_t)
 app.exec()
 print("UI-TEST ENDE")
