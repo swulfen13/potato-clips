@@ -43,7 +43,7 @@ ctl.cfg["sound_folders"] = ["Memes", "Reaktionen"]
 ctl.soundsChanged.emit()
 player = subprocess.Popen([sys.executable, "-c",
     _testenv.PLAYER_PRELUDE + "import numpy as np\n"
-    "t=np.arange(int(48000*6))/48000\n"
+    "t=np.arange(int(48000*30))/48000\n"
     "sd.play((0.03*np.sin(2*np.pi*330*t)*(1+np.sin(2*np.pi*2*t))).astype('float32'),48000); sd.wait()"])
 
 steps = []
@@ -128,10 +128,84 @@ def remote_check():
     print("Neue Funktionen:", new_checks)
 
 
+def pykey():
+    return next((k for k in ctl.app_labels() if "python" in k), "")
+
+
+def voice_cmd_test():
+    """Sprachbefehl 'Potato, clip Python' (wie aus der Spracherkennung) + Ansage + neue Handy-Befehle."""
+    import json, urllib.request
+    ctl.announceReady.connect(lambda d, to_all: new_checks.__setitem__("Ansage", (len(d) > 10000, to_all)))
+    k = pykey()
+    new_checks["Test-Player als Quelle"] = bool(k)
+    created["n_clips"] = len(ctl.clips.clips) if hasattr(ctl.clips, "clips") else None
+    ctl.voiceCommand.emit("clip", [k], "Python")
+    st = json.loads(urllib.request.urlopen(ctl.remote.local_url("/api/state"), timeout=5).read())
+    new_checks["Dashboard-Status"] = any(a["key"] == k for a in st["apps"]) and "rec" in st and "amount" in st
+    urllib.request.urlopen(ctl.remote.local_url("/api/voice/amount/40"), timeout=5).read()
+    req = urllib.request.Request(ctl.remote.local_url("/api/say"), method="POST",
+                                 data=json.dumps({"text": "Hallo Test", "voice": "", "fx": True}).encode(),
+                                 headers={"Content-Type": "application/json"})
+    new_checks["Vorlesen angenommen"] = json.loads(urllib.request.urlopen(req, timeout=5).read())["ok"]
+    try:
+        urllib.request.urlopen(ctl.remote.local_url("/api/clip?apps=app:gibtsnicht.exe"), timeout=5)
+        new_checks["falsche App abgelehnt"] = False
+    except Exception:
+        new_checks["falsche App abgelehnt"] = True
+    ctl.speechReady.connect(lambda d, t: new_checks.__setitem__("Vorlesen fertig", t == "Hallo Test" and len(d) > 1000))
+
+
+def voice_cmd_check():
+    import json
+    from soundclip.config import CLIPS_DIR
+    metas = []
+    for d in CLIPS_DIR.iterdir():
+        try:
+            metas.append(json.loads((d / "meta.json").read_text(encoding="utf-8")))
+        except Exception:
+            pass
+    metas.sort(key=lambda m: m["created"])
+    last = metas[-1] if metas else {}
+    new_checks["Clip nur Python"] = [st["key"] for st in last.get("stems", [])] == [pykey()]
+    print("Letzter Clip:", last.get("name"), [st["key"] for st in last.get("stems", [])], "erwartet:", pykey(),
+          "Anzahl Clips:", len(metas))
+    new_checks["Staerke 40"] = abs(ctl.voice_amount() - 0.4) < 0.01
+    print("Neue Funktionen 1.3:", new_checks)
+    ctl.mixer.stop_all()
+
+
+def wizard_lang_test():
+    from soundclip import i18n
+    from soundclip.ui.wizard import SetupWizard
+    lang0, mode0 = i18n.LANG, i18n.MODE
+    w = SetupWizard(ctl, win)
+    w.show()
+    app.processEvents()
+    before = w.next.text()
+    w.lang.setCurrentIndex(w.lang.findData("en" if lang0 == "de" else "de"))
+    for _ in range(5):
+        app.processEvents()
+    after = w.next.text()
+    w.grab().save(os.path.join(OUT, "8_assistent_umgeschaltet.png"))
+    new_checks["Assistent wechselt Sprache sofort"] = bool(before and after and before != after)
+    print("Assistent:", before, "->", after)
+    w._restarting = True          # im Test nicht neu starten
+    w.reject()
+    for _ in range(5):
+        app.processEvents()
+    i18n.setup(lang0, mode0)
+    ctl.cfg["language"] = "auto"
+    w.setParent(None)
+    w.deleteLater()
+    print("Sprache nach Assistent-Test:", i18n.LANG)
+
+
 dialogs = []
 
 
 def dialog_shots():
+    from soundclip import i18n
+    print("Sprache bei Dialogen:", i18n.LANG)
     from soundclip.ui.soundboard_tab import SoundDialog, TrimDialog
     from soundclip.ui.clips_tab import VideoDialog
     from soundclip.ui.settings_tab import QrView
@@ -174,6 +248,7 @@ step(100, lambda: win.soundboard._set_folder(""))
 step(100, remote_test)
 step(400, remote_check)
 step(100, lambda: ctl.mixer.stop_all())
+step(100, wizard_lang_test)
 step(100, dialog_shots)
 step(500, lambda: win.tabs.setCurrentWidget(win.sources))
 step(1200, shot("3_quellen"))
@@ -182,6 +257,8 @@ step(1500, rec_stop)
 step(100, make_clip)
 step(1200, open_clip)
 step(800, shot("2_clips"))
+step(100, voice_cmd_test)
+step(4000, voice_cmd_check)
 step(100, lambda: (win.tabs.setCurrentWidget(win.voice), ctl.set_voice("potato", True)))
 step(300, lambda: win.voice.amount.setValue(80))
 step(300, lambda: (ctl._on_hotkey("action:voice_down"), ctl._on_hotkey("action:voice_down")))

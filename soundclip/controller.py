@@ -1,9 +1,11 @@
 """Verbindet Engine, Bibliothek, Hotkeys und UI."""
 from __future__ import annotations
 
+import json
 import logging
 import random
 import threading
+import time
 
 from PySide6.QtCore import QObject, Signal
 
@@ -44,6 +46,9 @@ class Controller(QObject):
     remoteCommand = Signal(str)         # Befehl vom Handy / Stream Deck (aus dem Server-Thread)
     triggerFired = Signal(str)          # Sprach-Trigger hat einen Sound erkannt
     autoClipFire = Signal()             # Auto-Clip: jetzt clippen
+    voiceCommand = Signal(str, object, str)   # Sprachbefehl: Aktion, Quellen, Anzeigename
+    announceReady = Signal(object, bool)      # fertige Ansage: Audio, auch an Discord?
+    speechReady = Signal(object, str)         # vorgelesener Text (vom Handy): Audio, Text
 
     def __init__(self):
         super().__init__()
@@ -65,12 +70,21 @@ class Controller(QObject):
         from .remote import RemoteServer
         from .triggers import VoiceTriggers
         self.autoclip = AutoClip(self.cfg, self.autoClipFire.emit)
-        self.triggers = VoiceTriggers(self.cfg, self.sounds, self.triggerFired.emit)
+        from .announce import Announcer
+        self.announcer = Announcer(self)
+        self.triggers = VoiceTriggers(self.cfg, self.sounds, self.triggerFired.emit,
+                                      command=self.voiceCommand.emit, apps=self.app_labels)
         self.sources.listeners = [self.autoclip.on_chunk, self.triggers.on_chunk]
         self.remote = RemoteServer(self)
         self.remoteCommand.connect(self.run_command)
         self.triggerFired.connect(self.play_sound)
         self.autoClipFire.connect(lambda: self.clip_now(auto=True))
+        self.voiceCommand.connect(self.run_voice_command)
+        self.announceReady.connect(self._play_announce)
+        self.speechReady.connect(lambda data, text: self.mixer.play(data, sound_id="__tts__", name=text[:40],
+                                                                    preview=False))
+        self._rec_since = 0.0
+        self._tts_voices: list | None = None
 
     def start(self):
         try:
@@ -175,6 +189,38 @@ class Controller(QObject):
         elif v is not None:
             self.toast.emit("▶ " + s["name"], "info")
 
+    # ---------------------------------------------------------- Sprachbefehle & Ansage
+    def app_labels(self) -> dict:
+        """Aktuell verfuegbare Quellen: Schluessel -> Anzeigename (auch aus Hintergrund-Threads lesbar)."""
+        try:
+            return {k: str(v.get("label") or k) for k, v in dict(self.sources.available).items()}
+        except Exception:
+            return {}
+
+    def run_voice_command(self, action: str, keys, label: str):
+        keys = list(keys) if keys else None
+        if action == "clip":
+            self.toast.emit(f"🗣 Clip: {label}" if keys else "🗣 Clip!", "info")
+            self.clip_now(keys=keys, label=label)
+        elif action == "rec_start":
+            if self.sources.recording:
+                self.toast.emit("Es läuft schon eine Aufnahme", "warn")
+            else:
+                self.start_recording(keys)
+        elif action == "rec_stop":
+            if self.sources.recording:
+                self.stop_recording()
+            else:
+                self.toast.emit("Es läuft gerade keine Aufnahme", "warn")
+        elif action == "stop":
+            self.stop_all()
+
+    def _play_announce(self, data, to_all: bool):
+        try:
+            self.mixer.play(data, sound_id="__announce__", name="Ansage", preview=not to_all)
+        except Exception:
+            log.exception("Ansage")
+
     def play_random(self, folder: str = ""):
         """Zufaelligen Sound abspielen (optional nur aus einem Ordner, "*fav" = Favoriten)."""
         pool = [s for s in self.sounds.sounds
@@ -188,11 +234,26 @@ class Controller(QObject):
         self.play_sound(s["id"])
 
     # ---------------------------------------------------------- Fernbedienung
+    def _keys_ok(self, csv: str) -> list[str] | None:
+        keys = [k for k in csv.split(",") if k]
+        avail = self.app_labels()
+        return keys if keys and all(k in avail for k in keys) else None
+
     def remote_command_ok(self, cmd: str) -> bool:
-        if cmd in ("stop", "clip", "record", "random", "voice/toggle"):
+        if cmd in ("stop", "clip", "record", "random", "voice/toggle", "record/stop"):
             return True
         if cmd.startswith("random:"):
             return True
+        if cmd.startswith(("clip:", "record:")):
+            return self._keys_ok(cmd.partition(":")[2]) is not None
+        if cmd.startswith("say:"):
+            try:
+                d = json.loads(cmd[4:])
+                return isinstance(d, dict) and 0 < len(str(d.get("text", "")).strip()) <= 300
+            except ValueError:
+                return False
+        if cmd.startswith("voice/amount/"):
+            return cmd[13:].isdigit() and 0 <= int(cmd[13:]) <= 100
         if cmd.startswith("play/"):
             return self.sounds.get(cmd[5:]) is not None
         if cmd.startswith("voice/set/"):
@@ -209,18 +270,93 @@ class Controller(QObject):
             self.play_random(cmd.partition(":")[2])
         elif cmd == "clip":
             self.clip_now()
+        elif cmd.startswith("clip:"):
+            keys = self._keys_ok(cmd[5:])
+            if keys:
+                labels = self.app_labels()
+                self.clip_now(keys=keys, label=", ".join(labels[k] for k in keys))
         elif cmd == "record":
             self.toggle_recording()
+        elif cmd == "record/stop":
+            if self.sources.recording:
+                self.stop_recording()
+        elif cmd.startswith("record:"):
+            if self.sources.recording:
+                self.stop_recording()
+            else:
+                self.start_recording(self._keys_ok(cmd[7:]))
+        elif cmd.startswith("say:"):
+            d = json.loads(cmd[4:])
+            self.speak(str(d.get("text", ""))[:300], str(d.get("voice") or ""), bool(d.get("fx")))
+        elif cmd.startswith("voice/amount/"):
+            self.set_voice(amount=int(cmd[13:]) / 100.0)
         elif cmd == "voice/toggle":
             self.set_voice(enabled=not self.cfg["voice_enabled"])
         elif cmd.startswith("voice/set/") and cmd[10:] in VOICE_PRESETS:
             self.set_voice(cmd[10:], True)
 
+    def speak(self, text: str, voice: str = "", fx: bool = False):
+        """Text vorlesen – hoeren man selbst und Discord (vom Handy aus)."""
+        text = text.strip()
+        if not text:
+            return
+
+        def work():
+            from . import tts
+            from .mixer import load_audio
+            import os
+            try:
+                path = tts.synth(text, voice)
+                data = load_audio(path)
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+                pre = VOICE_PRESETS.get(self.cfg["voice_preset"]) if fx else None
+                if pre:
+                    from .effects import apply_chain
+                    scale = 0.4 + 1.2 * self.voice_amount()
+                    data = apply_chain(data, [{"type": k, "amount": min(1.0, a * scale)} for k, a in pre[1]])
+                self.speechReady.emit(data, text)
+            except Exception as e:
+                log.exception("Vorlesen")
+                self.toast.emit(f"Vorlesen fehlgeschlagen: {e}", "warn")
+        threading.Thread(target=work, daemon=True).start()
+        self.toast.emit("🗣 Wird vorgelesen …", "info")
+
+    def tts_voices(self) -> list:
+        """Windows-Stimmen (beim ersten Mal im Hintergrund geholt, bis dahin leer)."""
+        if self._tts_voices is None:
+            self._tts_voices = []
+
+            def load():
+                from . import tts
+                try:
+                    out = []
+                    for v in tts.voices():
+                        short = v["name"].replace("Microsoft ", "").replace(" Desktop", "")
+                        out.append({"name": v["name"], "label": f"{short} ({v.get('culture', '')})"})
+                    self._tts_voices = out
+                except Exception:
+                    log.exception("Stimmen")
+            threading.Thread(target=load, daemon=True).start()
+        return self._tts_voices
+
     def remote_state(self) -> dict:
+        from . import i18n
         from .i18n import tr
         playing = {v.sound_id for v in self.mixer.playing()}
         sounds = sorted(self.sounds.sounds, key=lambda s: not s.get("fav"))
+        labels = self.app_labels()
+        rec = self.sources.recording
         return {
+            "theme": self.cfg["ui_theme"], "now": time.time(),
+            "apps": [{"key": k, "label": (("Mikrofon" if i18n.LANG == "de" else "Microphone") if k == "mic" else v)}
+                     for k, v in sorted(labels.items(), key=lambda kv: (kv[0] != "mic", kv[1].lower()))],
+            "rec": {"active": bool(rec), "since": self._rec_since if rec else 0,
+                    "keys": sorted(rec.get("keys") or []) if rec else []},
+            "tts": self.tts_voices(),
+            "amount": int(round(self.voice_amount() * 100)),
             "sounds": [{"id": s["id"], "name": s["name"], "color": s.get("color", ""), "folder": s.get("folder", ""),
                         "fav": bool(s.get("fav")), "playing": s["id"] in playing} for s in sounds],
             "folders": self.sounds.folders(self.cfg["sound_folders"] or []),
@@ -232,7 +368,7 @@ class Controller(QObject):
     def remote_now(self) -> dict:
         from .i18n import tr
         playing = [{"name": v.name, "progress": round(v.progress(), 3)} for v in self.mixer.playing()
-                   if v.sound_id not in ("__preview__", "__test__")]
+                   if v.sound_id not in ("__preview__", "__test__", "__announce__", "__tts__")]
         return {"playing": playing, "recording": bool(self.sources.recording),
                 "voice": tr(voice_name(self.cfg["voice_preset"])) if self.cfg["voice_enabled"] else ""}
 
@@ -243,18 +379,20 @@ class Controller(QObject):
         self.mixer.stop_all()
         self.toast.emit("■ Alle Sounds gestoppt", "info")
 
-    def clip_now(self, seconds=None, auto: bool = False):
+    def clip_now(self, seconds=None, auto: bool = False, keys=None, label: str = ""):
         sec = seconds or self.cfg["buffer_seconds"]
 
         def work():
             try:
-                meta = self.sources.make_clip(sec)
+                meta = self.sources.make_clip(sec, keys=set(keys) if keys else None)
             except Exception as e:
                 log.exception("clip")
                 self.toast.emit(f"Clip fehlgeschlagen: {e}", "warn")
                 return
             if meta is None:
-                if not auto:
+                if keys and not auto:
+                    self.toast.emit(f"Clip: {label or ', '.join(keys)} war in den letzten Sekunden still", "warn")
+                elif not auto:
                     self.toast.emit("Clip: in den letzten Sekunden war alles still", "warn")
                 return
             names = ", ".join(st["label"] for st in meta["stems"])
@@ -267,6 +405,7 @@ class Controller(QObject):
                 self.toast.emit(f"🔥 Auto-Clip gespeichert ({sec:g}s): {names}", "ok")
             else:
                 self.toast.emit(f"✂ Clip gespeichert ({sec:g}s): {names}", "ok")
+            self.announcer.say("auto" if auto else "clip")
             self.clipsChanged.emit(meta["id"])
             if self.cfg["clip_autocopy"]:
                 try:
@@ -287,6 +426,7 @@ class Controller(QObject):
 
     def start_recording(self, keys=None):
         if self.sources.start_recording(keys):
+            self._rec_since = time.time()
             what = "alle Quellen"
             if keys or self.cfg["record_sources"]:
                 ks = keys or self.cfg["record_sources"]
@@ -294,12 +434,14 @@ class Controller(QObject):
                 what = ", ".join(labels)
             self.toast.emit(f"● Aufnahme läuft: {what}", "rec")
             self.recordingChanged.emit(True)
+            self.announcer.say("rec_start")
 
     def stop_recording(self):
         meta = self.sources.stop_recording()
         self.recordingChanged.emit(False)
         if meta:
             self.toast.emit(f"■ Aufnahme gespeichert ({meta['duration']:.0f}s)", "ok")
+            self.announcer.say("rec_stop")
             self.clipsChanged.emit(meta["id"])
         else:
             self.toast.emit("Aufnahme verworfen (nur Stille)", "warn")

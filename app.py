@@ -40,6 +40,9 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from soundclip.config import ASSETS_DIR, LOG_FILE, Config
 
 INSTANCE_KEY = "PotatoClips-single-instance"
+if os.environ.get("POTATO_CLIPS_DATA"):   # Tests mit eigenem Datenordner duerfen neben der echten App laufen
+    import hashlib as _hl
+    INSTANCE_KEY += "-" + _hl.md5(os.environ["POTATO_CLIPS_DATA"].encode("utf-8")).hexdigest()[:10]
 
 
 def setup_logging():

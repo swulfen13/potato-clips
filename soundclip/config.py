@@ -92,13 +92,21 @@ DEFAULTS: dict = {
     "remote_token": "",
     # Auto-Clip
     "autoclip_enabled": False,
-    "autoclip_source": "discord",     # discord | mic | any
+    "autoclip_source": "discord",     # alt (1.2.0): discord | mic | any
+    "autoclip_apps": None,            # Quellen, die Auto-Clip ausloesen ("*" = alle); None = wie autoclip_source
     "autoclip_db": -16.0,             # Schwelle in dBFS
     "autoclip_after": 4,              # Sekunden nach dem lauten Moment noch mitnehmen
     "autoclip_cooldown": 30,
     # Sprach-Trigger
     "triggers_enabled": False,
     "trigger_lang": "auto",           # auto | de | en
+    "voice_commands": False,          # "Potato, clip it" usw.
+    # Ansage nach dem Clip
+    "announce_mode": "me",            # off | me (nur ich) | all (ich + Discord)
+    "announce_text": "Clip by Potato!",
+    "announce_effect": "potato",      # Stimmeffekt der Ansage ("none" = ohne)
+    "announce_voice": "",             # Windows-Stimme ("" = passend zur Sprache)
+    "announce_recording": True,       # auch bei Aufnahme Start/Ende
     # Video
     "video_format": "9:16",
     # Oberflaeche

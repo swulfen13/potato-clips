@@ -451,6 +451,29 @@ _NEW12 = {
     "aus": "off", "wartet auf das Sprachpaket": "waiting for the language pack", "hört zu …": "listening …",
     "Sprachpaket installiert": "Language pack installed",
 }
+_NEW12.update({
+    # 1.3: Sprachbefehle, Ansage, Auto-Clip-Apps
+    "Es läuft schon eine Aufnahme": "A recording is already running",
+    "Es läuft gerade keine Aufnahme": "No recording is running", "Clip!": "Clip!",
+    "Wenn diese Apps laut werden": "When these apps get loud",
+    "Zum Beispiel Discord, Spotify oder der Voice-Chat im Spiel – mehrere gehen":
+        "For example Discord, Spotify or the voice chat in your game – you can pick several",
+    "Alle Apps": "All apps", "Keine – bitte auswählen": "None – please pick some", "Mikrofon (ich)": "Microphone (me)",
+    "Ansage nach dem Clip": "Announcement after a clip",
+    "Eine Stimme sagt „Clip by Potato!“, wenn ein Clip gespeichert wurde":
+        "A voice says “Clip by Potato!” when a clip was saved",
+    "Aus": "Off", "Nur ich höre sie": "Only I hear it", "Ich und Discord": "Me and Discord",
+    "Text der Ansage": "Announcement text", "Testen": "Test", "Ohne Effekt": "No effect",
+    "Stimme der Ansage": "Announcement voice", "Auch bei Aufnahme Start und Ende": "Also when a recording starts and ends",
+    "„Aufnahme läuft!“ und „Aufnahme gespeichert!“": "“Recording!” and “Recording saved!”",
+    "Sprachbefehle": "Voice commands",
+    "Sag „Potato, clip it!“ – oder „Potato, clip Spotify“, „Potato, Aufnahme starten“ …":
+        "Say “Potato, clip it!” – or “Potato, clip Spotify”, “Potato, start recording” …",
+    "Das versteht Potato": "What Potato understands",
+    "App-Namen kommen von selbst dazu, sobald die App läuft": "App names are added automatically as soon as the app runs",
+    "Gerade erkennbare Apps": "Apps it can recognize right now",
+    "Wort kennt die Erkennung nicht": "The recognizer doesn't know this word",
+})
 for _k, _v in _NEW12.items():
     EN[_k] = _v
     EN.setdefault(_k.rstrip(" :…—"), _v.rstrip(" :…—"))     # tr() trennt "…" und ":" am Ende ab
@@ -458,6 +481,12 @@ EN_PATTERNS += [(re.compile(a), b) for a, b in [
     (r"^(.+)\nLinksklick: abspielen · Rechtsklick: Optionen\nSprach-Trigger: „(.+)“$",
      r"\1\nLeft click: play · right click: options\nVoice trigger: “\2”"),
     (r"^Alle \((\d+)\)$", r"All (\1)"),
+    (r"^Clip: (.+) war in den letzten Sekunden still$", r"Clip: \1 was silent in the last few seconds"),
+    (r"^Clip: (.+)$", r"Clip: \1"),
+    (r"^Ansage fehlgeschlagen: (.+)$", r"Announcement failed: \1"),
+    (r"^Wort kennt die Erkennung nicht: (.+)$", r"The recognizer doesn't know this word: \1"),
+    (r"^Gerade erkennbare Apps: (.+)$", r"Apps it can recognize right now: \1"),
+    (r"^(.+) \(läuft gerade nicht\)$", r"\1 (not running right now)"),
     (r"^★ Favoriten \((\d+)\)$", r"★ Favorites (\1)"),
     (r"^Favoriten \((\d+)\)$", r"Favorites (\1)"),
     (r"^Sprach-Trigger: „(.+)“$", r"Voice trigger: “\1”"),

@@ -6,7 +6,7 @@ import numpy as np
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtCore import QRectF, QSize
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
                                QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget)
 
 from ..config import DATA_DIR
@@ -345,13 +345,15 @@ class SettingsTab(QWidget):
         self.ac_sw.toggled.connect(self._autoclip)
         self._row(sec, "Auto-Clip", "Speichert von selbst einen Clip, wenn es laut wird – Schreien, Lachen, Jubel",
                   self.ac_sw)
-        self.ac_src = QComboBox()
-        for k, t in (("discord", "Wenn Freunde in Discord laut werden"), ("mic", "Wenn ich laut werde (Mikro)"),
-                     ("any", "Wenn irgendwas laut wird")):
-            self.ac_src.addItem(t, k)
-        self.ac_src.setCurrentIndex(max(0, self.ac_src.findData(cfg["autoclip_source"])))
-        self.ac_src.currentIndexChanged.connect(self._autoclip)
-        self._row(sec, "Auslöser", None, self.ac_src)
+        self.ac_src = QPushButton()
+        self.ac_src.setMinimumWidth(250)
+        self.ac_src.setStyleSheet("text-align: left; padding-left: 12px;")
+        self.ac_menu = QMenu(self)
+        self.ac_menu.aboutToShow.connect(self._fill_ac_menu)
+        self.ac_src.setMenu(self.ac_menu)
+        self._row(sec, "Wenn diese Apps laut werden", "Zum Beispiel Discord, Spotify oder der Voice-Chat im Spiel – "
+                  "mehrere gehen", self.ac_src)
+        self._ac_label()
         self.ac_thr = QSlider(Qt.Horizontal)
         self.ac_thr.setRange(-40, -3)
         self.ac_thr.setFixedWidth(170)
@@ -365,6 +367,35 @@ class SettingsTab(QWidget):
         self.ac_now.setFixedWidth(120)
         self._row(sec, "Ab dieser Lautstärke", "Rechts siehst du, wie laut es gerade ist – Schwelle etwas darüber setzen",
                   [self.ac_thr, self.ac_thr_lbl, self.ac_now])
+        # Ansage nach dem Clip
+        self.an_mode = QComboBox()
+        for k, t in (("off", "Aus"), ("me", "Nur ich höre sie"), ("all", "Ich und Discord")):
+            self.an_mode.addItem(t, k)
+        self.an_mode.setCurrentIndex(max(0, self.an_mode.findData(cfg["announce_mode"])))
+        self.an_mode.currentIndexChanged.connect(lambda _: cfg.__setitem__("announce_mode", self.an_mode.currentData()))
+        self._row(sec, "Ansage nach dem Clip", "Eine Stimme sagt „Clip by Potato!“, wenn ein Clip gespeichert wurde",
+                  self.an_mode)
+        self.an_text = QLineEdit(cfg["announce_text"])
+        self.an_text.setMaxLength(120)
+        self.an_text.setMinimumWidth(200)
+        self.an_text.setPlaceholderText("Clip by Potato!")
+        self.an_text.editingFinished.connect(lambda: cfg.__setitem__("announce_text",
+                                                                     self.an_text.text().strip() or "Clip by Potato!"))
+        b_test = QPushButton("▶ Testen")
+        b_test.clicked.connect(self._test_announce)
+        self._row(sec, "Text der Ansage", None, [self.an_text, b_test])
+        self.an_fx = QComboBox()
+        self.an_fx.addItem("Ohne Effekt", "none")
+        from ..effects import VOICE_PRESETS, voice_name
+        for k in VOICE_PRESETS:
+            self.an_fx.addItem(f"{VOICE_PRESETS[k][0]} {tr_text(voice_name(k))}", k)
+        self.an_fx.setCurrentIndex(max(0, self.an_fx.findData(cfg["announce_effect"])))
+        self.an_fx.currentIndexChanged.connect(lambda _: cfg.__setitem__("announce_effect", self.an_fx.currentData()))
+        self._row(sec, "Stimme der Ansage", None, self.an_fx)
+        self.an_rec = ToggleSwitch()
+        self.an_rec.setChecked(bool(cfg["announce_recording"]))
+        self.an_rec.toggled.connect(lambda v: cfg.__setitem__("announce_recording", v))
+        self._row(sec, "Auch bei Aufnahme Start und Ende", "„Aufnahme läuft!“ und „Aufnahme gespeichert!“", self.an_rec)
         b = QPushButton("Ordner öffnen")
         b.clicked.connect(lambda: subprocess.Popen(["explorer", str(DATA_DIR)]))
         self._row(sec, "Speicherort", str(DATA_DIR), b)
@@ -487,6 +518,16 @@ class SettingsTab(QWidget):
         self.tr_sw.toggled.connect(self._triggers)
         self._row(sec, "Sprach-Trigger", "Sagst du ein bestimmtes Wort, spielt der passende Sound – die Erkennung "
                   "läuft komplett auf deinem PC", self.tr_sw)
+        self.vc_sw = ToggleSwitch()
+        self.vc_sw.setChecked(bool(cfg["voice_commands"]))
+        self.vc_sw.toggled.connect(self._triggers)
+        self._row(sec, "Sprachbefehle", "Sag „Potato, clip it!“ – oder „Potato, clip Spotify“, „Potato, Aufnahme "
+                  "starten“ …", self.vc_sw)
+        self.vc_help = QLabel()
+        self.vc_help.setWordWrap(True)
+        self.vc_help.setMinimumWidth(300)
+        self.vc_help.setTextFormat(Qt.RichText)
+        self._row(sec, "Das versteht Potato", "App-Namen kommen von selbst dazu, sobald die App läuft", self.vc_help)
         self.tr_lang = QComboBox()
         for k, t in (("auto", "Wie die Oberfläche"), ("de", "Deutsch"), ("en", "English")):
             self.tr_lang.addItem(t, k)
@@ -908,10 +949,72 @@ class SettingsTab(QWidget):
 
     # ---- Auto-Clip
     def _autoclip(self, *_):
-        self.ctl.cfg.update(autoclip_enabled=self.ac_sw.isChecked(), autoclip_source=self.ac_src.currentData())
+        self.ctl.cfg.update(autoclip_enabled=self.ac_sw.isChecked())
         self.ctl.sources.poke()
         if self.ac_sw.isChecked() and self.sender() is self.ac_sw:
             self.ctl.toast.emit("🔥 Auto-Clip an – laute Momente werden automatisch gespeichert", "ok")
+
+    def _ac_label(self):
+        apps = self.ctl.autoclip.apps()
+        names = self.ctl.app_labels()
+        if "*" in apps:
+            txt = tr_text("Alle Apps")
+        elif not apps:
+            txt = tr_text("Keine – bitte auswählen")
+        else:
+            def nice(k):
+                if k == "mic":
+                    return tr_text("Mikrofon (ich)")
+                if k in names:
+                    return names[k]
+                stem = k.replace("app:", "").replace(".exe", "")
+                return stem[:1].upper() + stem[1:]
+            txt = ", ".join(nice(k) for k in apps)
+        self.ac_src.setText(txt[:60] + ("…" if len(txt) > 60 else ""))
+
+    def _fill_ac_menu(self):
+        m = self.ac_menu
+        m.clear()
+        cur = list(self.ctl.autoclip.apps())
+        names = self.ctl.app_labels()
+        keys = ["mic"] + sorted([k for k in names if k != "mic"], key=lambda k: names[k].lower())
+        keys += [k for k in cur if k not in keys and k != "*"]
+        a_all = m.addAction(tr_text("Alle Apps"))
+        a_all.setCheckable(True)
+        a_all.setChecked("*" in cur)
+        a_all.toggled.connect(lambda v: self._set_ac_app("*", v))
+        m.addSeparator()
+        for k in keys:
+            if k == "mic":
+                label = tr_text("Mikrofon (ich)")
+            elif k in names:
+                label = names[k]
+            else:
+                label = tr_text(k.replace("app:", "") + " (läuft gerade nicht)")
+            a = m.addAction(label)
+            a.setCheckable(True)
+            a.setChecked(k in cur)
+            a.setEnabled("*" not in cur)
+            a.toggled.connect(lambda v, key=k: self._set_ac_app(key, v))
+
+    def _set_ac_app(self, key, on):
+        cur = [k for k in self.ctl.autoclip.apps() if k != key]
+        if on:
+            cur = ["*"] if key == "*" else cur + [key]
+        self.ctl.cfg["autoclip_apps"] = cur
+        self.ctl.sources.poke()
+        self._ac_label()
+        if self.ac_menu.isVisible() and key == "*":
+            self.ac_menu.close()
+
+    def _test_announce(self):
+        self.ctl.cfg["announce_text"] = self.an_text.text().strip() or "Clip by Potato!"
+        mode = self.ctl.cfg["announce_mode"]
+        self.ctl.cfg["announce_mode"] = "me"          # Test hoert nur man selbst
+        try:
+            self.ctl.announcer.say("clip", force=True)
+        finally:
+            self.ctl.cfg["announce_mode"] = mode
 
     # ---- Fernbedienung
     def _copy_text(self, text):
@@ -952,9 +1055,10 @@ class SettingsTab(QWidget):
     # ---- Sprach-Trigger
     def _triggers(self, *_):
         from .. import triggers as trg
-        self.ctl.cfg.update(triggers_enabled=self.tr_sw.isChecked(), trigger_lang=self.tr_lang.currentData())
+        self.ctl.cfg.update(triggers_enabled=self.tr_sw.isChecked(), trigger_lang=self.tr_lang.currentData(),
+                            voice_commands=self.vc_sw.isChecked())
         lang = self.ctl.triggers.lang_wanted()
-        if self.tr_sw.isChecked() and not trg.model_ready(lang) and self._dl is None:
+        if (self.tr_sw.isChecked() or self.vc_sw.isChecked()) and not trg.model_ready(lang) and self._dl is None:
             self._download_model()
         self.ctl.triggers.sync()
         self.ctl.sources.poke()
@@ -988,13 +1092,48 @@ class SettingsTab(QWidget):
         from .. import i18n
         q1, q2 = ("„", "“") if i18n.LANG == "de" else ("“", "”")
         from html import escape
-        items = [escape(f"{q1}{s['trigger']}{q2} → {s['name']}") for s in self.ctl.sounds.sounds if s.get("trigger")]
+        items = []
+        for snd in self.ctl.sounds.sounds:
+            if not snd.get("trigger"):
+                continue
+            line = escape(f"{q1}{snd['trigger']}{q2} → {snd['name']}")
+            unknown = [w for w in snd["trigger"].split(",") if w.strip() and not trg.known(lang, w)] if ready else []
+            if unknown:
+                line += " <span style='color:#e5484d'>" + escape(tr_text("⚠ Wort kennt die Erkennung nicht: ")
+                                                              + ", ".join(w.strip() for w in unknown)) + "</span>"
+            items.append(line)
         self.tr_list.setText("<br>".join(items) if items else tr_text("Noch keine – Rechtsklick auf einen Sound"))
+        self._command_help(lang, ready)
+
+    def _command_help(self, lang, ready):
+        from html import escape
+        from .. import triggers as trg
+        de = lang == "de"
+        wake = "Potato" if not de else "Potato / Kartoffel"
+        rows = ([("clip (it / das)", "die letzten Sekunden clippen"), ("clip Spotify", "nur diese App clippen"),
+                 ("Aufnahme starten", "alles aufnehmen"), ("Aufnahme Discord", "nur diese App aufnehmen"),
+                 ("Aufnahme stoppen", "Aufnahme beenden"), ("stopp", "alle Sounds aus")] if de else
+                [("clip (it / that)", "clip the last seconds"), ("clip Spotify", "clip only this app"),
+                 ("start recording", "record everything"), ("record Discord", "record only this app"),
+                 ("stop recording", "end the recording"), ("stop", "stop all sounds")])
+        html = "<br>".join(f"<b>{escape(wake)}, {escape(a)}</b> – {escape(tr_text(b))}" for a, b in rows)
+        if ready:
+            names = trg.app_words(self.ctl.app_labels(), lang)
+            spoken = sorted({" ".join(ws) for ws in names})
+            if spoken:
+                html += "<br><span style='opacity:.75'>" + escape(tr_text("Gerade erkennbare Apps: ") +
+                                                                  ", ".join(spoken[:18])) + "</span>"
+        self.vc_help.setText(html)
 
     def _live_tick(self):
         if not self.isVisible():
             return
         ctl = self.ctl
+        self._ticks = getattr(self, "_ticks", 0) + 1
+        if self._ticks % 20 == 0:          # alle 3 s: neue/beendete Apps in Auto-Clip und Sprachbefehlen
+            self._ac_label()
+            if self._dl is None:
+                self._trigger_info()
         # Auto-Clip-Pegel
         db = ctl.autoclip.take_level_db()
         if ctl.cfg["autoclip_enabled"]:
@@ -1018,7 +1157,7 @@ class SettingsTab(QWidget):
             else:
                 self.tr_dl.setText(f"{int(st['p'] * 100)} %")
         t = ctl.triggers
-        if not ctl.cfg["triggers_enabled"]:
+        if not (ctl.cfg["triggers_enabled"] or ctl.cfg["voice_commands"]):
             txt = tr_text("aus")
         elif t.error:
             txt = "⚠ " + t.error
@@ -1034,6 +1173,7 @@ class SettingsTab(QWidget):
     def _sync(self):
         for w, key in ((self.rm_sw, "remote_enabled"), (self.api_sw, "api_enabled"),
                        (self.ac_sw, "autoclip_enabled"), (self.tr_sw, "triggers_enabled"),
+                       (self.vc_sw, "voice_commands"),
                        (self.norm_sw, "normalize_sounds"), (self.trim_sw, "auto_trim")):
             if w.isChecked() != bool(self.ctl.cfg[key]):
                 w.blockSignals(True)

@@ -40,12 +40,19 @@
 - **Ordner, Suche & Favoriten:** Sounds in Ordner sortieren, Favoriten nach oben, 🎲 Zufalls-Sound (auch per Hotkey).
 - **Alle Sounds gleich laut:** Lautstärke wird automatisch angeglichen; Stille am Anfang wird beim Import
   abgeschnitten. Jeder Sound lässt sich zuschneiden.
-- **Handy als Fernbedienung:** QR-Code scannen, dann ist das Soundboard im Handy-Browser (gleiches WLAN, keine App).
+- **Handy als Fernbedienung:** QR-Code scannen, dann ist das Dashboard im Handy-Browser (gleiches WLAN, keine App):
+  Soundboard, Clip (auch einzelne Apps), Aufnahme mit App-Auswahl, Stimmeffekte und Vorlesen – im Profi- oder
+  Potato-Look.
 - **Stream Deck & OBS:** Links für Stream Deck (Sounds, Stopp, Clip, Zufall, Stimmeffekt) und ein OBS-Overlay
   als Browser-Quelle.
 - **Sprach-Trigger:** Sag ein Wort, und der passende Sound spielt. Die Spracherkennung (Vosk) läuft komplett offline,
   das Sprachpaket (~45 MB) wird beim ersten Einschalten geladen.
-- **Auto-Clip:** Wird es im Call laut (Schreien, Lachen, Jubel), wird automatisch ein Clip gespeichert.
+- **Sprachbefehle:** „Potato, clip it!“, „Potato, clip Spotify“, „Potato, Aufnahme starten“ / „Aufnahme Discord“ /
+  „Aufnahme stoppen“, „Potato, stopp“ – auf Deutsch und Englisch, offline.
+- **Ansage nach dem Clip:** Eine Stimme mit Potato-Effekt sagt „Clip by Potato!“ – nur für dich oder auch für Discord;
+  Text und Stimme sind einstellbar.
+- **Auto-Clip:** Wird es laut (Schreien, Lachen, Jubel), wird automatisch ein Clip gespeichert. Welche Apps das
+  auslösen, wählst du selbst: Discord, Spotify, der Voice-Chat im Spiel, dein Mikro …
 - **Clip als Video:** MP4 mit animierter Wellenform im Hochformat (TikTok/Shorts/Reels), Quer- oder Quadratformat.
 - **Alles lokal.** Nichts wird hochgeladen, keine Konten und kein Tracking.
 
@@ -87,6 +94,21 @@ Potato Clips startet danach im Hintergrund. Das Fenster zu schließen beendet es
 | Effekt stärker / schwächer | `Strg+Alt+Bild↑` / `Strg+Alt+Bild↓` |
 
 Alles ist unter Einstellungen änderbar. Sound-Hotkeys setzt du im Soundboard per Rechtsklick auf einen Sound.
+
+## Sprachbefehle
+
+Einstellungen → *Sprach-Trigger* → „Sprachbefehle“ einschalten (das Sprachpaket, ~45 MB, wird einmal geladen).
+Dann reicht zum Beispiel:
+
+| Sagen | Passiert |
+|---|---|
+| „Potato, clip it!“ / „Kartoffel, clip das!“ | die letzten Sekunden clippen |
+| „Potato, clip Spotify“ | nur Spotify clippen (jede laufende App geht) |
+| „Potato, Aufnahme starten“ / „Potato, Aufnahme Discord“ | alles bzw. nur Discord aufnehmen |
+| „Potato, Aufnahme stoppen“ | Aufnahme beenden |
+| „Potato, stopp“ | alle Sounds aus |
+
+Auf Englisch: „Potato, clip it“, „Potato, record Discord“, „Potato, stop recording“ …
 
 ## Handy, Stream Deck & OBS
 

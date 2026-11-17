@@ -532,11 +532,13 @@ class SoundboardTab(QWidget):
             t.set_progress(prog.get(sid, -1.0))
         m = self.ctl.mixer
         parts = []
-        parts.append("🎧 " + (m.devices["monitor"] if m.is_open("monitor") else f"Fehler: {m.errors['monitor']}"))
+        from ..i18n import tr
+        parts.append("🎧 " + (m.devices["monitor"] if m.is_open("monitor")
+                             else tr("Fehler:") + " " + str(m.errors["monitor"])))
         if m.is_open("virtual"):
-            parts.append("🎙 Freunde über: " + m.devices["virtual"])
+            parts.append("🎙 " + tr("Freunde über:") + " " + m.devices["virtual"])
         else:
-            parts.append("🎙 Kein virtuelles Mikro – deine Freunde hören die Sounds nicht (siehe Einstellungen)")
+            parts.append("🎙 " + tr("Kein virtuelles Mikro – deine Freunde hören die Sounds nicht (siehe Einstellungen)"))
         txt = "   ·   ".join(parts)
         if txt != self.status.text():
             self.status.setText(txt)

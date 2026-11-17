@@ -176,8 +176,26 @@ def _make_handler(server: RemoteServer):
             if path.startswith("/api/"):
                 cmd = unquote(path[5:])
                 folder = (qs.get("folder") or [""])[0]
+                apps = (qs.get("apps") or [""])[0]
                 if cmd == "random" and folder:
                     cmd = "random:" + folder
+                if cmd in ("clip", "record") and apps:
+                    cmd = f"{cmd}:{apps}"
+                if cmd == "say":
+                    body = {}
+                    if self._body:
+                        try:
+                            body = json.loads(self._body.decode("utf-8"))
+                        except ValueError:
+                            body = {}
+                    if not isinstance(body, dict):
+                        body = {}
+                    for k in ("text", "voice", "fx"):
+                        if k not in body and qs.get(k):
+                            body[k] = qs[k][0]
+                    if isinstance(body.get("fx"), str):
+                        body["fx"] = body["fx"] in ("1", "true", "yes", "on")
+                    cmd = "say:" + json.dumps({k: body.get(k) for k in ("text", "voice", "fx")}, ensure_ascii=False)
                 if not ctl.remote_command_ok(cmd):
                     self._json({"ok": False, "error": "unbekannter Befehl"}, 404)
                     return
@@ -185,6 +203,8 @@ def _make_handler(server: RemoteServer):
                 self._json({"ok": True})
                 return
             self._json({"ok": False, "error": "nicht gefunden"}, 404)
+
+        _body = b""
 
         def do_GET(self):
             try:
@@ -195,9 +215,14 @@ def _make_handler(server: RemoteServer):
                 log.exception("Fernbedienung")
 
         def do_POST(self):
-            n = int(self.headers.get("Content-Length") or 0)
-            if 0 < n <= 4096:
-                self.rfile.read(n)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                n = 0
+            if n > 8192:
+                self._json({"ok": False, "error": "zu gross"}, 413)
+                return
+            self._body = self.rfile.read(n) if n > 0 else b""
             self.do_GET()
 
         do_HEAD = do_GET
@@ -210,107 +235,227 @@ def _make_handler(server: RemoteServer):
 def _texts() -> dict:
     from . import i18n
     de = i18n.LANG == "de"
-    return {
-        "all": "Alle" if de else "All", "fav": "★ Favoriten" if de else "★ Favorites",
-        "stop": "■ Stopp" if de else "■ Stop", "random": "🎲 Zufall" if de else "🎲 Random",
-        "clip": "✂ Clip" if de else "✂ Clip", "voice": "Stimme" if de else "Voice",
-        "off": "aus" if de else "off", "on": "AN" if de else "ON", "search": "Suchen…" if de else "Search…",
-        "empty": "Noch keine Sounds" if de else "No sounds yet",
-        "offline": "Keine Verbindung zum PC" if de else "Can't reach the PC",
-        "rec": "● Aufnahme" if de else "● Record",
+    D = {
+        "sounds": ("Sounds", "Sounds"), "clip": ("Clip", "Clip"), "voice": ("Stimme", "Voice"),
+        "say": ("Vorlesen", "Speak"), "all": ("Alle", "All"), "fav": ("★ Favoriten", "★ Favorites"),
+        "stop": ("Stopp", "Stop"), "random": ("🎲 Zufall", "🎲 Random"), "search": ("Sound suchen…", "Search sounds…"),
+        "empty": ("Noch keine Sounds – am PC ins Soundboard ziehen", "No sounds yet – drop some into the soundboard on the PC"),
+        "offline": ("Keine Verbindung zum PC", "Can't reach the PC"), "online": ("verbunden", "connected"),
+        "clip_all": ("✂ Clip – alles", "✂ Clip – everything"),
+        "clip_hint": ("Speichert die letzten Sekunden.", "Saves the last few seconds."),
+        "clip_app": ("Nur eine App clippen", "Clip just one app"),
+        "rec": ("Aufnahme", "Recording"), "rec_which": ("Was soll aufgenommen werden?", "What should be recorded?"),
+        "rec_all": ("Alles", "Everything"), "rec_start": ("● Aufnahme starten", "● Start recording"),
+        "rec_stop": ("■ Aufnahme stoppen", "■ Stop recording"), "rec_running": ("Läuft", "Recording"),
+        "on": ("An", "On"), "off": ("Aus", "Off"), "voice_fx": ("Stimmeffekt", "Voice effect"),
+        "strength": ("Stärke", "Strength"), "say_ph": ("Was soll vorgelesen werden?", "What should be read out?"),
+        "say_btn": ("🗣 Vorlesen", "🗣 Speak"), "say_fx": ("Mit Stimmeffekt", "With voice effect"),
+        "say_hint": ("Du und deine Freunde in Discord hören es.", "You and your friends in Discord will hear it."),
+        "say_voice": ("Windows-Stimme", "Windows voice"), "sent": ("Gesendet", "Sent"),
+        "look": ("Look", "Look"), "pro": ("Profi", "Pro"), "potato": ("Potato", "Potato"),
     }
+    return {k: v[0] if de else v[1] for k, v in D.items()}
 
 
-def page_html(ctl) -> str:
-    potato = ctl.cfg.get("ui_theme") == "potato"
-    t = json.dumps(_texts(), ensure_ascii=False)
-    css_theme = """
-  --bg:#FFE94D; --panel:#fff; --text:#111; --muted:#333; --accent:#FF3D8B; --border:3px solid #111;
-  --radius:0; --shadow:4px 4px 0 #111; --font:'Comic Sans MS','Comic Neue',system-ui,sans-serif;""" if potato else """
-  --bg:#0D0E11; --panel:#16181D; --text:#E9EAEE; --muted:#8B909C; --accent:#F2A93B; --border:1px solid #2C3038;
-  --radius:12px; --shadow:none; --font:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;"""
-    return """<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#111"><title>Potato Clips</title>
+PAGE = r"""<!doctype html><html data-theme="__THEME__" lang="__LANG__"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0D0E11"><title>Potato Clips</title>
 <style>
-:root{""" + css_theme + """}
+:root[data-theme=pro]{--bg:#0D0E11;--panel:#16181D;--panel2:#1D2027;--text:#E9EAEE;--muted:#8B909C;--acc:#F2A93B;--acc-t:#111;
+ --line:1px solid #262A32;--r:14px;--sh:none;--font:Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--red:#E5484D;--tf:none}
+:root[data-theme=potato]{--bg:#FFE94D;--panel:#fff;--panel2:#fff;--text:#111;--muted:#333;--acc:#FF3D8B;--acc-t:#111;
+ --line:3px solid #111;--r:0;--sh:4px 4px 0 #111;--font:'Comic Neue','Comic Sans MS',system-ui,sans-serif;--red:#FF2E2E;--tf:uppercase}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);padding:12px 12px 90px}
-h1{font-size:20px;margin:4px 2px 12px;display:flex;align-items:center;gap:8px}
-h1 small{font-size:12px;color:var(--muted);font-weight:400}
-.bar{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:8px;scrollbar-width:none}
-.chip{flex:none;border:var(--border);border-radius:999px;background:var(--panel);color:var(--text);padding:8px 14px;
- font:inherit;font-size:14px;font-weight:700}
-.chip.on{background:var(--accent);color:#111}
-input{width:100%;padding:11px 14px;border:var(--border);border-radius:var(--radius);background:var(--panel);
- color:var(--text);font:inherit;font-size:16px;margin-bottom:10px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
-.tile{position:relative;min-height:84px;border:var(--border);border-radius:var(--radius);background:var(--panel);
- color:var(--text);font:inherit;font-weight:800;font-size:15px;text-align:left;padding:12px 12px 12px 16px;
- box-shadow:var(--shadow);overflow:hidden;word-break:break-word}
-.tile:active{transform:translate(2px,2px)}
-.tile i{position:absolute;left:0;top:0;bottom:0;width:6px}
-.tile.playing{outline:3px solid var(--accent)}
-.tile .f{position:absolute;right:8px;top:6px;font-size:13px}
-.dock{position:fixed;left:0;right:0;bottom:0;display:flex;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));
- background:var(--bg);border-top:var(--border)}
-.dock button{flex:1;padding:14px 4px;border:var(--border);border-radius:var(--radius);background:var(--panel);
- color:var(--text);font:inherit;font-weight:800;font-size:15px}
-.dock .stop{background:#e5484d;color:#fff}
-.dock .on{background:var(--accent);color:#111}
-select{padding:10px;border:var(--border);border-radius:var(--radius);background:var(--panel);color:var(--text);
- font:inherit;font-size:15px;max-width:48%}
-.row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
-.msg{color:var(--muted);text-align:center;padding:30px 0}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font)}
+body{padding:calc(64px + env(safe-area-inset-top)) 14px calc(86px + env(safe-area-inset-bottom))}
+button,input,select,textarea{font:inherit;color:inherit}
+header{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;align-items:center;gap:10px;
+ padding:calc(10px + env(safe-area-inset-top)) 14px 10px;background:var(--bg);border-bottom:var(--line)}
+.logo{font-weight:800;font-size:18px;display:flex;align-items:center;gap:8px;flex:1;text-transform:var(--tf)}
+.logo i{font-style:normal;width:30px;height:30px;display:grid;place-items:center;background:var(--acc);border-radius:9px;
+ border:var(--line);font-size:16px}
+.pill{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.pill b{width:8px;height:8px;border-radius:50%;background:#3DD68C;display:inline-block}
+.pill.off b{background:var(--red)} .pill.rec{color:var(--red);font-weight:800}
+.pill.rec b{background:var(--red);animation:bl 1s infinite}@keyframes bl{50%{opacity:.2}}
+.btn{border:var(--line);border-radius:var(--r);background:var(--panel);padding:10px 14px;font-weight:700;box-shadow:var(--sh);
+ cursor:pointer}
+.btn:active{transform:translate(1px,1px)} .btn.acc{background:var(--acc);color:var(--acc-t);border-color:transparent}
+:root[data-theme=potato] .btn.acc{border:var(--line)}
+.btn.red{background:var(--red);color:#fff;border-color:transparent} .btn.big{width:100%;padding:16px;font-size:17px}
+.btn.sm{padding:7px 11px;font-size:13px}
+nav{position:fixed;left:0;right:0;bottom:0;z-index:5;display:grid;grid-template-columns:repeat(4,1fr);background:var(--panel);
+ border-top:var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
+nav button{background:none;border:0;padding:8px 2px;border-radius:10px;color:var(--muted);font-size:12px;font-weight:700;
+ display:flex;flex-direction:column;align-items:center;gap:3px;text-transform:var(--tf)}
+nav button span{font-size:20px;line-height:1} nav button em{font-style:normal} nav button.on{color:var(--text);background:var(--panel2)}
+:root[data-theme=potato] nav button.on{background:var(--acc)}
+section{display:none} section.on{display:block}
+h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:20px 2px 10px}
+.card{background:var(--panel);border:var(--line);border-radius:var(--r);padding:14px;box-shadow:var(--sh);margin-bottom:12px}
+input[type=search],textarea,select{width:100%;padding:12px 14px;border:var(--line);border-radius:var(--r);background:var(--panel);
+ font-size:16px;outline:none}
+textarea{min-height:110px;resize:vertical}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:10px 0 4px;scrollbar-width:none} .chips::-webkit-scrollbar{display:none}
+.chips.wrap{flex-wrap:wrap;overflow:visible}
+.chip{flex:none;border:var(--line);border-radius:999px;background:var(--panel);padding:8px 14px;font-size:14px;font-weight:700}
+:root[data-theme=potato] .chip{border-radius:0}
+.chip.on{background:var(--acc);color:var(--acc-t);border-color:transparent}
+:root[data-theme=potato] .chip.on{border:var(--line)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:8px}
+.tile{position:relative;min-height:78px;border:var(--line);border-radius:var(--r);background:var(--panel);font-weight:700;
+ font-size:15px;text-align:left;padding:12px 12px 12px 18px;box-shadow:var(--sh);overflow:hidden;word-break:break-word}
+.tile:active{transform:translate(2px,2px)} .tile i{position:absolute;left:0;top:0;bottom:0;width:6px}
+.tile.play{outline:2px solid var(--acc);outline-offset:-2px} .tile .f{position:absolute;right:9px;top:7px;font-size:12px;color:var(--acc)}
+.tile .fo{display:block;font-size:11px;color:var(--muted);font-weight:500;margin-top:4px}
+.row{display:flex;gap:10px;align-items:center} .row>*{flex:1}
+.muted{color:var(--muted);font-size:13px}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:700}
+.tg{width:54px;height:30px;border-radius:999px;background:#3A3E47;border:0;position:relative;flex:none}
+.tg::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:.15s}
+.tg.on{background:var(--acc)} .tg.on::after{left:27px}
+:root[data-theme=potato] .tg{border:3px solid #111;border-radius:0;background:#fff} :root[data-theme=potato] .tg::after{background:#111;border-radius:0;top:2px;left:2px}
+:root[data-theme=potato] .tg.on{background:var(--acc)} :root[data-theme=potato] .tg.on::after{left:25px}
+input[type=range]{width:100%;accent-color:var(--acc)}
+.presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:4px}
+.preset{border:var(--line);border-radius:var(--r);background:var(--panel);padding:12px 8px;font-size:14px;font-weight:700;
+ box-shadow:var(--sh);text-align:center}
+.preset.on{background:var(--acc);color:var(--acc-t);border-color:transparent} :root[data-theme=potato] .preset.on{border:var(--line)}
+.recbox{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.recbox .t{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--red)}
+.toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:9;
+ background:var(--text);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:14px;font-weight:700;opacity:0;
+ transition:.2s;pointer-events:none} .toast.on{opacity:1}
+.msg{color:var(--muted);text-align:center;padding:36px 10px}
 </style></head><body>
-<h1>🥔 Potato Clips <small id="st"></small></h1>
+<header><div class="logo"><i>🥔</i>Potato Clips</div><span class="pill" id="st"><b></b><span></span></span>
+<button class="btn sm" id="b_look" title="Look"></button><button class="btn red sm" id="b_stop"></button></header>
+
+<section id="t_sounds" class="on">
 <input id="q" type="search" autocomplete="off">
-<div class="bar" id="folders"></div>
-<div class="row"><select id="voice"></select><button class="chip" id="vt"></button></div>
-<div class="grid" id="grid"></div>
-<div class="msg" id="msg"></div>
-<div class="dock"><button class="stop" id="b_stop"></button><button id="b_rand"></button>
-<button id="b_clip"></button><button id="b_rec"></button></div>
+<div class="chips" id="folders"></div>
+<div class="row" style="margin-top:6px"><button class="btn" id="b_rand"></button></div>
+<div class="grid" id="grid"></div><div class="msg" id="msg"></div>
+</section>
+
+<section id="t_clip">
+<button class="btn acc big" id="b_clip" style="margin-top:6px"></button>
+<p class="muted" id="clip_hint"></p>
+<h2 id="h_clip_app"></h2><div class="chips wrap" id="clip_apps"></div>
+<h2 id="h_rec"></h2>
+<div class="card"><div class="recbox" id="recbox" style="display:none"><span class="muted" id="rec_what"></span><span class="t" id="rec_t">0:00</span></div>
+<div class="muted" id="rec_which"></div><div class="chips wrap" id="rec_apps"></div>
+<button class="btn big" id="b_rec" style="margin-top:10px"></button></div>
+</section>
+
+<section id="t_voice">
+<div class="card"><div class="sw"><span id="l_vfx"></span><button class="tg" id="vt"></button></div>
+<div style="margin-top:14px"><div class="muted" id="l_str"></div><input type="range" id="amt" min="0" max="100"></div></div>
+<div class="presets" id="presets"></div>
+</section>
+
+<section id="t_say">
+<div class="card"><textarea id="say_t" maxlength="300"></textarea>
+<div class="row" style="margin-top:10px"><select id="say_v"></select></div>
+<div class="sw" style="margin-top:12px"><span id="l_sfx"></span><button class="tg" id="say_fx"></button></div>
+<button class="btn acc big" id="b_say" style="margin-top:14px"></button>
+<p class="muted" id="say_hint"></p></div>
+</section>
+
+<nav id="nav"><button data-t="sounds" class="on"><span>🔊</span><em></em></button><button data-t="clip"><span>✂️</span><em></em></button>
+<button data-t="voice"><span>🎭</span><em></em></button><button data-t="say"><span>🗣</span><em></em></button></nav>
+<div class="toast" id="toast"></div>
 <script>
-const T=""" + t + """;
-let S=null,filter="",q="";
+const T=__T__;
+let S=null,filter="",q="",recSel=new Set(),sayFx=false,lastOk=0,clockOff=0;
 const $=id=>document.getElementById(id);
-$("q").placeholder=T.search;$("b_stop").textContent=T.stop;$("b_rand").textContent=T.random;
-$("b_clip").textContent=T.clip;$("b_rec").textContent=T.rec;
-function api(c){return fetch("/api/"+c,{method:"POST",credentials:"same-origin"}).then(()=>setTimeout(load,150)).catch(()=>{})}
-function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}[c]))}
-function render(){
- if(!S)return;
- const f=$("folders");let h='<button class="chip'+(filter===""?" on":"")+'" data-f="">'+T.all+'</button>';
- h+='<button class="chip'+(filter==="*fav"?" on":"")+'" data-f="*fav">'+T.fav+'</button>';
- for(const x of S.folders)h+='<button class="chip'+(filter===x?" on":"")+'" data-f="'+esc(x)+'">'+esc(x)+'</button>';
- f.innerHTML=h;
- const list=S.sounds.filter(s=>(filter===""||(filter==="*fav"?s.fav:s.folder===filter))&&
-   (!q||s.name.toLowerCase().includes(q)));
- $("grid").innerHTML=list.map(s=>'<button class="tile'+(s.playing?" playing":"")+'" data-id="'+esc(s.id)+'"><i style="background:'+
-   esc(s.color||"#888")+'"></i>'+(s.fav?'<span class="f">★</span>':'')+esc(s.name)+'</button>').join("");
- $("msg").textContent=list.length?"":T.empty;
- const v=$("voice");
- if(v.options.length!==S.presets.length){v.innerHTML=S.presets.map(p=>'<option value="'+esc(p.key)+'">'+esc(p.name)+'</option>').join("")}
- v.value=S.voice.preset;
- $("vt").textContent=T.voice+": "+(S.voice.enabled?T.on:T.off);$("vt").className="chip"+(S.voice.enabled?" on":"");
- $("b_rec").className=S.recording?"on":"";
- $("st").textContent="";
-}
-function load(){fetch("/api/state",{credentials:"same-origin"}).then(r=>r.json()).then(j=>{S=j;render()})
- .catch(()=>{$("st").textContent=T.offline})}
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function store(k,v){try{localStorage.setItem(k,v)}catch(e){}} function load_(k){try{return localStorage.getItem(k)}catch(e){return null}}
+// Texte
+$("q").placeholder=T.search;$("b_stop").textContent="■ "+T.stop;$("b_rand").textContent=T.random;$("b_clip").textContent=T.clip_all;
+$("clip_hint").textContent=T.clip_hint;$("h_clip_app").textContent=T.clip_app;$("h_rec").textContent=T.rec;
+$("rec_which").textContent=T.rec_which;$("l_vfx").textContent=T.voice_fx;$("l_str").textContent=T.strength;
+$("say_t").placeholder=T.say_ph;$("l_sfx").textContent=T.say_fx;$("b_say").textContent=T.say_btn;$("say_hint").textContent=T.say_hint;
+const navNames={sounds:T.sounds,clip:T.clip,voice:T.voice,say:T.say};
+document.querySelectorAll("#nav button").forEach(b=>b.querySelector("em").textContent=navNames[b.dataset.t]);
+// Look
+function setLook(l){document.documentElement.dataset.theme=l;$("b_look").textContent=l==="pro"?"🥔":"🕶";
+ $("b_look").title=T.look+": "+(l==="pro"?T.potato:T.pro)}
+setLook(load_("pc_look")||document.documentElement.dataset.theme);
+$("b_look").onclick=()=>{const l=document.documentElement.dataset.theme==="pro"?"potato":"pro";setLook(l);store("pc_look",l)};
+// Tabs
+function tab(t){document.querySelectorAll("section").forEach(s=>s.classList.toggle("on",s.id==="t_"+t));
+ document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",b.dataset.t===t));store("pc_tab",t);window.scrollTo(0,0)}
+$("nav").onclick=e=>{const b=e.target.closest("button");if(b)tab(b.dataset.t)};
+tab(load_("pc_tab")||"sounds");
+// Aktionen
+function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("on"),1400)}
+function api(c,body){return fetch("/api/"+c,{method:"POST",credentials:"same-origin",headers:body?{"Content-Type":"application/json"}:{},
+ body:body?JSON.stringify(body):undefined}).then(r=>{if(!r.ok)throw 0;setTimeout(load,200);return r}).catch(()=>toast(T.offline))}
+$("b_stop").onclick=()=>api("stop");
+$("b_rand").onclick=()=>api("random"+(filter?"?folder="+encodeURIComponent(filter):""));
+$("b_clip").onclick=()=>api("clip").then(()=>toast("✂ "+T.sent));
+$("vt").onclick=()=>api("voice/toggle");
+$("amt").onchange=e=>api("voice/amount/"+e.target.value);
+$("say_fx").onclick=()=>{sayFx=!sayFx;$("say_fx").classList.toggle("on",sayFx)};
+$("b_say").onclick=()=>{const t=$("say_t").value.trim();if(!t){$("say_t").focus();return}
+ api("say",{text:t,voice:$("say_v").value,fx:sayFx}).then(()=>toast("🗣 "+T.sent));store("pc_voice",$("say_v").value)};
+$("b_rec").onclick=()=>{if(S&&S.rec.active)api("record/stop");else api("record"+(recSel.size?"?apps="+encodeURIComponent([...recSel].join(",")):""))};
 document.addEventListener("click",e=>{
  const t=e.target.closest("[data-id]");if(t){api("play/"+encodeURIComponent(t.dataset.id));return}
  const f=e.target.closest("[data-f]");if(f){filter=f.dataset.f;render();return}
+ const c=e.target.closest("[data-clip]");if(c){api("clip?apps="+encodeURIComponent(c.dataset.clip)).then(()=>toast("✂ "+c.textContent));return}
+ const r=e.target.closest("[data-rec]");if(r&&!(S&&S.rec.active)){const k=r.dataset.rec;if(k==="*")recSel.clear();else recSel.has(k)?recSel.delete(k):recSel.add(k);render();return}
+ const p=e.target.closest("[data-p]");if(p){api("voice/set/"+encodeURIComponent(p.dataset.p));return}
 });
 $("q").addEventListener("input",e=>{q=e.target.value.toLowerCase().trim();render()});
-$("b_stop").onclick=()=>api("stop");$("b_clip").onclick=()=>api("clip");$("b_rec").onclick=()=>api("record");
-$("b_rand").onclick=()=>api("random"+(filter&&filter!=="*fav"?"?folder="+encodeURIComponent(filter):(filter==="*fav"?"?folder=*fav":"")));
-$("vt").onclick=()=>api("voice/toggle");
-$("voice").onchange=e=>api("voice/set/"+encodeURIComponent(e.target.value));
+function render(){
+ if(!S)return;
+ // Sounds
+ let h='<button class="chip'+(filter===""?" on":"")+'" data-f="">'+esc(T.all)+'</button>';
+ if(S.sounds.some(s=>s.fav))h+='<button class="chip'+(filter==="*fav"?" on":"")+'" data-f="*fav">'+esc(T.fav)+'</button>';
+ for(const x of S.folders)h+='<button class="chip'+(filter===x?" on":"")+'" data-f="'+esc(x)+'">'+esc(x)+'</button>';
+ $("folders").innerHTML=h;
+ const list=S.sounds.filter(s=>(filter===""||(filter==="*fav"?s.fav:s.folder===filter))&&(!q||s.name.toLowerCase().includes(q)));
+ $("grid").innerHTML=list.map(s=>'<button class="tile'+(s.playing?" play":"")+'" data-id="'+esc(s.id)+'"><i style="background:'+
+  esc(s.color||"#888")+'"></i>'+(s.fav?'<span class="f">★</span>':'')+esc(s.name)+(s.folder&&filter===""?'<span class="fo">'+esc(s.folder)+'</span>':'')+'</button>').join("");
+ $("msg").textContent=list.length?"":T.empty;
+ // Clip & Aufnahme
+ $("clip_apps").innerHTML=S.apps.map(a=>'<button class="chip" data-clip="'+esc(a.key)+'">'+esc(a.label)+'</button>').join("");
+ const ra=S.rec.active,keys=new Set(ra?S.rec.keys:[...recSel]);
+ $("rec_apps").innerHTML='<button class="chip'+(keys.size===0?" on":"")+'" data-rec="*">'+esc(T.rec_all)+'</button>'+
+  S.apps.map(a=>'<button class="chip'+(keys.has(a.key)?" on":"")+'" data-rec="'+esc(a.key)+'">'+esc(a.label)+'</button>').join("");
+ $("rec_apps").style.opacity=ra?.55:1;
+ $("b_rec").textContent=ra?T.rec_stop:T.rec_start;$("b_rec").className="btn big "+(ra?"":"red");
+ $("recbox").style.display=ra?"flex":"none";
+ $("rec_what").textContent=T.rec_running+": "+(S.rec.keys.length?S.rec.keys.map(k=>(S.apps.find(a=>a.key===k)||{label:k}).label).join(", "):T.rec_all);
+ // Stimme
+ $("vt").classList.toggle("on",S.voice.enabled);
+ if(document.activeElement!==$("amt"))$("amt").value=S.amount;
+ $("presets").innerHTML=S.presets.map(p=>'<button class="preset'+(p.key===S.voice.preset?" on":"")+'" data-p="'+esc(p.key)+'">'+esc(p.name)+'</button>').join("");
+ // Vorlesen
+ const sv=$("say_v");
+ if(sv.options.length!==S.tts.length+1){const keep=sv.value||load_("pc_voice")||"";
+  sv.innerHTML='<option value="">'+esc(T.say_voice)+'</option>'+S.tts.map(v=>'<option value="'+esc(v.name)+'">'+esc(v.label)+'</option>').join("");sv.value=keep}
+ // Status
+ const st=$("st");st.className="pill"+(ra?" rec":"");st.querySelector("span").textContent=ra?"REC":T.online;
+}
+function tick(){
+ if(S&&S.rec.active){const sec=Math.max(0,Math.floor(Date.now()/1000+clockOff-S.rec.since));$("rec_t").textContent=Math.floor(sec/60)+":"+String(sec%60).padStart(2,"0")}
+ if(Date.now()-lastOk>5000){const st=$("st");st.className="pill off";st.querySelector("span").textContent=T.offline}
+}
+function load(){fetch("/api/state",{credentials:"same-origin"}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{
+ S=j;lastOk=Date.now();clockOff=j.now-Date.now()/1000;if(!S.sounds.some(s=>s.fav)&&filter==="*fav")filter="";render()}).catch(()=>{})}
 if(location.search.includes("t="))history.replaceState(null,"","/");
-load();setInterval(load,1500);
+load();setInterval(load,1500);setInterval(tick,500);
 </script></body></html>"""
+
+
+def page_html(ctl) -> str:
+    from . import i18n
+    theme = "potato" if ctl.cfg.get("ui_theme") == "potato" else "pro"
+    return (PAGE.replace("__THEME__", theme).replace("__LANG__", i18n.LANG)
+            .replace("__T__", json.dumps(_texts(), ensure_ascii=False)))
 
 
 def overlay_html(ctl) -> str:

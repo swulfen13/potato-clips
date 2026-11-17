@@ -28,7 +28,18 @@ class AutoClip:
         self._timer: threading.Timer | None = None
 
     # ---- welche Quellen zaehlen?
+    def apps(self) -> list[str]:
+        """Gewaehlte Quellen ("*" = alle). Aeltere Einstellung (Discord/Mikro/alles) wird uebernommen."""
+        apps = self.cfg.get("autoclip_apps")
+        if isinstance(apps, list):
+            return apps
+        mode = self.cfg.get("autoclip_source", "discord")
+        return {"mic": ["mic"], "any": ["*"]}.get(mode, ["app:discord.exe"])
+
     def watches(self, key: str) -> bool:
+        apps = self.cfg.get("autoclip_apps")
+        if isinstance(apps, list):
+            return "*" in apps or key in apps
         mode = self.cfg.get("autoclip_source", "discord")
         if mode == "mic":
             return key == "mic"

@@ -667,9 +667,14 @@ class SourceManager:
         if self.cfg["mic_passthrough"] or self.cfg["voice_monitor"]:
             keys.add("mic")
         keys |= set((self.cfg["route_sources"] or {}).keys())
-        if self.cfg.get("triggers_enabled") or (self.cfg.get("autoclip_enabled")
-                                                and self.cfg.get("autoclip_source") == "mic"):
+        if self.cfg.get("triggers_enabled") or self.cfg.get("voice_commands"):
             keys.add("mic")
+        if self.cfg.get("autoclip_enabled"):
+            ac = self.cfg.get("autoclip_apps")
+            if isinstance(ac, list):
+                keys |= set(avail) if "*" in ac else set(ac)
+            elif self.cfg.get("autoclip_source") == "mic":
+                keys.add("mic")
         return keys & avail
 
     def reconcile(self):

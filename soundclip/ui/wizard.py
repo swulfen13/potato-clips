@@ -43,17 +43,54 @@ class SetupWizard(QDialog):
         nav.addWidget(self.next)
         lay.addLayout(nav)
 
-        self._page_welcome()
-        self._page_cable()
-        self._page_discord()
-        self._page_mic()
-        self._page_done()
+        from .. import i18n
+        self._lang_start = i18n.LANG                     # Sprache, in der die App gerade laeuft
+        self._lang_choice = self.ctl.cfg.get("language", "auto")
+        self._theme_choice = self.ctl.cfg.get("ui_theme", "pro")
+        self._build_pages()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
         self.timer.start(60)
         self._go(0)
 
     # ---------------------------------------------------------------- Seiten
+    def _build_pages(self):
+        self._page_welcome()
+        self._page_cable()
+        self._page_discord()
+        self._page_mic()
+        self._page_done()
+
+    def _lang_changed(self, *_):
+        """Sprache sofort umstellen: der Assistent baut sich in der neuen Sprache neu auf."""
+        # Qt meldet auch beim Abbauen alter/geschlossener Fenster eine Aenderung - die ignorieren
+        if self.sender() is not self.lang or not self.isVisible() or self.lang.currentData() is None:
+            return
+        self._lang_choice = self.lang.currentData()
+        self._theme_choice = "potato" if self.theme_btns["potato"].isChecked() else "pro"
+        QTimer.singleShot(0, self._retranslate)
+
+    def _retranslate(self):
+        from PySide6.QtCore import QLocale
+        from .. import i18n
+        if not self.isVisible():
+            return
+        lang = self._lang_choice
+        if lang not in ("de", "en"):
+            lang = "de" if QLocale.system().language() == QLocale.German else "en"
+        i18n.setup(lang, i18n.MODE)
+        self._stop_probes()
+        idx = self.stack.currentIndex()
+        while self.stack.count():
+            w = self.stack.widget(0)
+            self.stack.removeWidget(w)
+            w.deleteLater()
+        self._build_pages()
+        self.setWindowTitle("Potato Clips einrichten")
+        self.back.setText("Zurück")
+        self.skip.setText("Überspringen")
+        self._go(idx)
+
     def _page(self, title, text=""):
         w = QWidget()
         v = QVBoxLayout(w)
@@ -90,7 +127,7 @@ class SetupWizard(QDialog):
             b.setIcon(QIcon(_theme_preview(key)))
             b.setIconSize(QSize(96, 53))
             b.setMinimumHeight(80)
-            b.setChecked(self.ctl.cfg.get("ui_theme", "pro") == key)
+            b.setChecked(self._theme_choice == key)
             row.addWidget(b, 1)
             self.theme_btns[key] = b
         v.addLayout(row)
@@ -102,7 +139,8 @@ class SetupWizard(QDialog):
         self.lang = QComboBox()
         for k, t in (("auto", "Automatisch (Windows)"), ("de", "Deutsch"), ("en", "English")):
             self.lang.addItem(t, k)
-        self.lang.setCurrentIndex(max(0, self.lang.findData(self.ctl.cfg.get("language", "auto"))))
+        self.lang.setCurrentIndex(max(0, self.lang.findData(self._lang_choice)))
+        self.lang.currentIndexChanged.connect(self._lang_changed)
         self.lang.setMinimumWidth(220)
         lrow.addWidget(self.lang)
         v.addLayout(lrow)
@@ -223,11 +261,13 @@ class SetupWizard(QDialog):
         self._go(i + 1)
 
     def _apply_look(self) -> bool:
-        """Design/Sprache gewechselt? Dann speichern und neu starten (Assistent kommt danach wieder)."""
+        """Design gewechselt? Dann speichern und neu starten (Assistent kommt danach wieder).
+        Die Sprache wechselt im Assistenten sofort; das Hauptfenster folgt nach dem Assistenten."""
         mode = "potato" if self.theme_btns["potato"].isChecked() else "pro"
         lang = self.lang.currentData()
         cfg = self.ctl.cfg
-        if mode == cfg.get("ui_theme", "pro") and lang == cfg.get("language", "auto"):
+        cfg["language"] = lang
+        if mode == cfg.get("ui_theme", "pro"):
             return False
         cfg.update(ui_theme=mode, language=lang)
         self._stop_probes()
@@ -252,12 +292,33 @@ class SetupWizard(QDialog):
     def _finish(self):
         self._stop_probes()
         self.ctl.cfg["setup_done"] = True
+        self.ctl.cfg["language"] = self.lang.currentData() if self.stack.count() else self._lang_choice
         self.accept()
+        from .. import i18n
+        if i18n.LANG != self._lang_start:          # Hauptfenster in der neuen Sprache neu starten
+            from .restart import restart_app
+            restart_app()
 
     def closeEvent(self, e):
         self._stop_probes()
         self.ctl.cfg["setup_done"] = True
         super().closeEvent(e)
+        self._keep_language()
+
+    def reject(self):
+        self._stop_probes()
+        self.ctl.cfg["setup_done"] = True
+        super().reject()
+        self._keep_language()
+
+    def _keep_language(self):
+        """Fenster geschlossen, nachdem die Sprache umgestellt wurde: Sprache merken und neu starten."""
+        from .. import i18n
+        if i18n.LANG != self._lang_start and not getattr(self, "_restarting", False):
+            self._restarting = True
+            self.ctl.cfg["language"] = self._lang_choice
+            from .restart import restart_app
+            restart_app()
 
     # ---------------------------------------------------------------- Pruefungen
     def _check_cable(self):

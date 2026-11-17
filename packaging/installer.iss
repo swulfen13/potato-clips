@@ -31,14 +31,27 @@ ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=force
 RestartApplications=no
 LicenseFile=..\LICENSE
+ShowLanguageDialog=yes
 
 [Languages]
 Name: "german"; MessagesFile: "compiler:Languages\German.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[CustomMessages]
+german.Extra=Zusätzlich:
+english.Extra=Additional:
+german.Desktop=Verknüpfung auf dem Desktop
+english.Desktop=Shortcut on the desktop
+german.Autostart=Mit Windows starten (läuft unauffällig im Hintergrund)
+english.Autostart=Start with Windows (runs quietly in the background)
+german.GetCable=VB-Cable herunterladen (damit Freunde in Discord deine Sounds hören)
+english.GetCable=Download VB-Cable (so your friends in Discord hear your sounds)
+german.StartNow=Potato Clips jetzt starten
+english.StartNow=Start Potato Clips now
+
 [Tasks]
-Name: "desktopicon"; Description: "Verknüpfung auf dem Desktop"; GroupDescription: "Zusätzlich:"
-Name: "autostart"; Description: "Mit Windows starten (läuft unauffällig im Hintergrund)"; GroupDescription: "Zusätzlich:"
+Name: "desktopicon"; Description: "{cm:Desktop}"; GroupDescription: "{cm:Extra}"
+Name: "autostart"; Description: "{cm:Autostart}"; GroupDescription: "{cm:Extra}"
 
 [Files]
 Source: "..\dist\PotatoClips\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -53,8 +66,8 @@ Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "--minimized"; Tasks: autostart
 
 [Run]
-Filename: "https://vb-audio.com/Cable/"; Description: "VB-Cable herunterladen (damit Freunde in Discord deine Sounds hören)"; Flags: shellexec postinstall skipifsilent nowait unchecked; Check: not CableInstalled
-Filename: "{app}\{#AppExe}"; Description: "Potato Clips jetzt starten"; Flags: nowait postinstall skipifsilent
+Filename: "https://vb-audio.com/Cable/"; Description: "{cm:GetCable}"; Flags: shellexec postinstall skipifsilent nowait unchecked; Check: not CableInstalled
+Filename: "{app}\{#AppExe}"; Description: "{cm:StartNow}"; Flags: nowait postinstall skipifsilent
 ; nach einem automatischen Update (leise Installation) direkt wieder starten
 Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent
 
@@ -66,6 +79,24 @@ Filename: "{sys}\taskkill.exe"; Parameters: "/f /im audiocap.exe"; Flags: runhid
 Type: files; Name: "{userstartup}\{#AppName}.lnk"
 
 [Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Dir, Cfg, Lang: String;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    { Sprache des Installers als Startsprache merken (nur wenn es noch keine Einstellungen gibt) }
+    Dir := ExpandConstant('{userappdata}\Potato Clips');
+    Cfg := Dir + '\config.json';
+    if not FileExists(Cfg) then
+    begin
+      if ActiveLanguage = 'german' then Lang := 'de' else Lang := 'en';
+      ForceDirectories(Dir);
+      SaveStringToFile(Cfg, '{"language": "' + Lang + '", "setup_done": false}', False);
+    end;
+  end;
+end;
+
 function CableInstalled: Boolean;
 begin
   Result := FileExists(ExpandConstant('{sys}\drivers\vbaudio_cable64_win10.sys')) or
