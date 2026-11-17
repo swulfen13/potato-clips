@@ -6,7 +6,7 @@ import numpy as np
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtCore import QRectF, QSize
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
                                QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget)
 
 from ..config import DATA_DIR
@@ -78,7 +78,7 @@ def intruder_text(ctl) -> str:
 class SettingsTab(QWidget):
     CATEGORIES = [("allgemein", "Allgemein"), ("discord", "Discord & Freunde"), ("mikrofon", "Mikrofon"),
                   ("geraete", "Audio-Geräte"), ("clips", "Clips & Aufnahme"), ("soundboard", "Soundboard"),
-                  ("fernbedienung", "Fernbedienung"), ("trigger", "Sprach-Trigger"), ("hotkeys", "Hotkeys"), ("ueber", "Über Potato Clips")]
+                  ("fernbedienung", "Fernbedienung"), ("trigger", "Sprach-Trigger"), ("hotkeys", "Hotkeys"), ("backup", "Backup & Umzug"), ("ueber", "Über Potato Clips")]
 
     def __init__(self, ctl):
         super().__init__()
@@ -347,6 +347,11 @@ class SettingsTab(QWidget):
         self.autocopy.toggled.connect(lambda v: cfg.__setitem__("clip_autocopy", v))
         self._row(sec, "Neue Clips sofort kopieren",
                   "Nach dem Clippen liegt der Clip als MP3 in der Zwischenablage – in Discord Strg+V", self.autocopy)
+        self.tx_sw = ToggleSwitch()
+        self.tx_sw.setChecked(bool(cfg["clip_transcribe"]))
+        self.tx_sw.toggled.connect(lambda v: cfg.__setitem__("clip_transcribe", v))
+        self._row(sec, "Neue Clips in Text umwandeln", "Offline – damit du Clips nach gesagten Wörtern suchen kannst "
+                  "(braucht das Sprachpaket unter „Sprach-Trigger“)", self.tx_sw)
         self.ac_sw = ToggleSwitch()
         self.ac_sw.setChecked(bool(cfg["autoclip_enabled"]))
         self.ac_sw.toggled.connect(self._autoclip)
@@ -444,6 +449,14 @@ class SettingsTab(QWidget):
         self.trim_sw.setChecked(bool(cfg["auto_trim"]))
         self.trim_sw.toggled.connect(lambda v: cfg.__setitem__("auto_trim", v))
         self._row(sec, "Stille beim Hinzufügen abschneiden", "Sounds starten sofort, ohne Pause am Anfang", self.trim_sw)
+        self.wheel_src = QComboBox()
+        self.wheel_src.setMinimumWidth(200)
+        self._fill_wheel_src()
+        self.wheel_src.currentIndexChanged.connect(
+            lambda _: cfg.__setitem__("wheel_source", self.wheel_src.currentData() or "fav"))
+        ctl.soundsChanged.connect(self._fill_wheel_src)
+        self._row(sec, "Sound-Rad zeigt", "Taste festlegen unter Hotkeys → „Sound-Rad“ (z. B. Maus 5). Halten, Maus in "
+                  "eine Richtung, loslassen = Sound – bis zu 8 Sounds", self.wheel_src)
         self.soundboard_section = sec
 
         # ================= Handy & Stream Deck
@@ -591,6 +604,17 @@ class SettingsTab(QWidget):
         hwl.addWidget(hint)
         sec.addWidget(hw)
 
+        # ================= Backup & Umzug
+        sec = self._section("backup", "Backup & Umzug")
+        b_bk = QPushButton("Backup erstellen …")
+        b_bk.clicked.connect(self._backup_create)
+        self._row(sec, "Backup erstellen", "Alle Sounds, Hotkeys und Einstellungen in eine Datei – "
+                  "für einen neuen PC oder zur Sicherheit. Clips sind optional.", b_bk)
+        b_rs = QPushButton("Backup einspielen …")
+        b_rs.clicked.connect(self._backup_restore)
+        self._row(sec, "Backup einspielen", "Ersetzt Sounds und Einstellungen durch die aus dem Backup. "
+                  "Dein jetziger Stand wird vorher aufgehoben.", b_rs)
+
         # ================= Ueber
         sec = self._section("ueber", "Über Potato Clips")
         from .. import __version__
@@ -625,6 +649,112 @@ class SettingsTab(QWidget):
         ctl.overlayToggled.connect(lambda v: (self.ov.blockSignals(True), self.ov.setChecked(v),
                                               self.ov.blockSignals(False)))
         self.cat_buttons["allgemein"].setChecked(True)
+
+    # ---- Backup
+    def _run_with_progress(self, title, label, fn):
+        """fn(progress) im Hintergrund, mit Fortschrittsfenster. Liefert (ergebnis, fehler)."""
+        import threading
+        from PySide6.QtCore import QEventLoop
+        from PySide6.QtWidgets import QProgressDialog
+        prog = QProgressDialog(label, None, 0, 100, self)
+        prog.setWindowTitle(title)
+        prog.setWindowModality(Qt.WindowModal)
+        prog.setMinimumDuration(300)
+        st = {"p": 0.0, "done": False, "res": None, "err": None}
+
+        def work():
+            try:
+                st["res"] = fn(lambda v: st.__setitem__("p", v))
+            except Exception as e:
+                st["err"] = e
+            st["done"] = True
+        threading.Thread(target=work, daemon=True).start()
+        loop = QEventLoop(self)
+        t = QTimer(self)
+
+        def poll():
+            prog.setValue(int(st["p"] * 100))
+            if st["done"]:
+                t.stop()
+                loop.quit()
+        t.timeout.connect(poll)
+        t.start(80)
+        loop.exec()
+        prog.close()
+        return st["res"], st["err"]
+
+    def _backup_create(self):
+        import datetime as _dt
+        from pathlib import Path
+        from .. import __version__, backup
+        clips_mb = 0
+        try:
+            clips_mb = (backup.estimate(True) - backup.estimate(False)) / 1024 ** 2
+        except Exception:
+            pass
+        box = QMessageBox(self)
+        box.setWindowTitle(tr_text("Backup erstellen"))
+        box.setText(tr_text("Clips auch ins Backup packen?"))
+        box.setInformativeText(tr_text("Clips: ca. {mb} MB").format(mb=f"{clips_mb:.0f}"))
+        yes = box.addButton(tr_text("Mit Clips"), QMessageBox.YesRole)
+        no = box.addButton(tr_text("Ohne Clips"), QMessageBox.NoRole)
+        box.addButton(QMessageBox.Cancel)
+        box.exec()
+        if box.clickedButton() not in (yes, no):
+            return
+        with_clips = box.clickedButton() is yes
+        default = str(Path.home() / "Desktop" / f"Potato Clips {_dt.date.today().isoformat()}{backup.EXT}")
+        path, _ = QFileDialog.getSaveFileName(self, tr_text("Backup speichern"), default,
+                                              f"Potato Clips Backup (*{backup.EXT})")
+        if not path:
+            return
+        self.ctl.cfg.save()
+        self.ctl.sounds.save()
+        self.ctl.stats.save()
+        res, err = self._run_with_progress(tr_text("Backup"), tr_text("Backup wird erstellt …"),
+                                           lambda prog: backup.create(path, with_clips, __version__, prog))
+        if err:
+            QMessageBox.warning(self, tr_text("Backup"), tr_text("Backup fehlgeschlagen: ") + str(err))
+            return
+        self.ctl.toast.emit(tr_text("💾 Backup gespeichert: ") + Path(res).name, "ok")
+        import subprocess
+        subprocess.Popen(["explorer", "/select,", str(res).replace("/", "\\")])
+
+    def _backup_restore(self):
+        from .. import backup
+        path, _ = QFileDialog.getOpenFileName(self, tr_text("Backup einspielen"), "",
+                                              f"Potato Clips Backup (*{backup.EXT})")
+        if not path:
+            return
+        try:
+            info = backup.inspect(path)
+        except backup.BackupError as e:
+            QMessageBox.warning(self, tr_text("Backup einspielen"), tr_text(str(e)))
+            return
+        when = str(info.get("created", ""))[:16].replace("T", " ")
+        what = tr_text("{n} Sound-Dateien").format(n=info.get("sound_files", 0))
+        if info.get("clips"):
+            what += ", " + tr_text("{n} Clips").format(n=info.get("clip_count", 0))
+        else:
+            what += " · " + tr_text("ohne Clips (deine Clips bleiben)")
+        if self.ctl.sources.recording:
+            QMessageBox.information(self, tr_text("Backup einspielen"), tr_text("Bitte erst die Aufnahme beenden."))
+            return
+        r = QMessageBox.question(self, tr_text("Backup einspielen"),
+                                 tr_text("Backup vom {when} einspielen?").format(when=when) + "\n" + what + "\n\n" +
+                                 tr_text("Deine jetzigen Sounds und Einstellungen werden ersetzt (aber aufgehoben). "
+                                         "Potato Clips startet dafür neu."))
+        if r != QMessageBox.Yes:
+            return
+        _res, err = self._run_with_progress(tr_text("Backup"), tr_text("Backup wird vorbereitet …"),
+                                            lambda prog: backup.restore_prepare(path))
+        if err:
+            QMessageBox.warning(self, tr_text("Backup einspielen"),
+                                tr_text(str(err)) if isinstance(err, backup.BackupError) else
+                                tr_text("Backup fehlgeschlagen: ") + str(err))
+            return
+        from .restart import restart_app
+        restart_app()
 
     # ---- Aufbau-Helfer
     def _section(self, key, title):
@@ -956,6 +1086,16 @@ class SettingsTab(QWidget):
             self.auto.setChecked(autostart.is_enabled())
             self.auto.blockSignals(False)
             self.ctl.toast.emit(f"Autostart fehlgeschlagen: {e}", "warn")
+
+    def _fill_wheel_src(self, *_):
+        cur = self.ctl.cfg.get("wheel_source", "fav")
+        self.wheel_src.blockSignals(True)
+        self.wheel_src.clear()
+        self.wheel_src.addItem(tr_text("Favoriten (und die ersten Sounds)"), "fav")
+        for f in self.ctl.sounds.folders(self.ctl.cfg["sound_folders"] or []):
+            self.wheel_src.addItem(tr_text("Ordner: ") + f, f)
+        self.wheel_src.setCurrentIndex(max(0, self.wheel_src.findData(cur)))
+        self.wheel_src.blockSignals(False)
 
     # ---- Auto-Clip
     def _autoclip(self, *_):

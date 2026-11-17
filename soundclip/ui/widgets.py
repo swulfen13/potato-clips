@@ -4,11 +4,11 @@ from __future__ import annotations
 import numpy as np
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QPoint, QRect, QRectF, QSize, Qt, QVariantAnimation, Signal
+from PySide6.QtCore import QEasingCurve, QPoint, QRect, QRectF, QSize, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import (QBrush, QColor, QFont, QIcon, QKeySequence, QLinearGradient, QPainter, QPainterPath,
                            QPen, QPixmap, QRadialGradient)
-from PySide6.QtWidgets import (QCheckBox, QFrame, QHBoxLayout, QKeySequenceEdit, QLayout, QSizePolicy, QToolButton,
-                               QWidget)
+from PySide6.QtWidgets import (QCheckBox, QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QLayout, QSizePolicy,
+                               QToolButton, QWidget)
 
 from ..hotkeys import combo_to_qt, qt_to_combo
 
@@ -590,11 +590,24 @@ class HotkeyEdit(QWidget):
         self.clear_btn = QToolButton()
         self.clear_btn.setText("✕")
         self.clear_btn.setToolTip("Hotkey entfernen")
+        # Maus-Seitentaste oder Gamepad-Knopf statt Tastatur
+        self.special = ""
+        self.special_lbl = QLabel()
+        self.special_lbl.setObjectName("kbd")
+        self.special_lbl.setMinimumHeight(30)
+        self.special_lbl.hide()
+        self.pad_btn = QToolButton()
+        self.pad_btn.setText("🖱🎮")
+        self.pad_btn.setToolTip("Maus-Seitentaste oder Controller-Knopf aufnehmen")
+        self.pad_btn.clicked.connect(self._capture_special)
         lay.addWidget(self.edit, 1)
+        lay.addWidget(self.special_lbl, 1)
+        lay.addWidget(self.pad_btn)
         lay.addWidget(self.clear_btn)
+        self._cap_timer = None
         self.set_combo(combo)
-        self.edit.editingFinished.connect(self._emit)
-        self.clear_btn.clicked.connect(lambda: (self.edit.clear(), self._placeholder(), self._emit()))
+        self.edit.editingFinished.connect(self._key_done)
+        self.clear_btn.clicked.connect(self._clear)
 
     def _placeholder(self):
         """Qt setzt beim Leeren wieder sein englisches 'Press shortcut' - unseren Text erneut setzen."""
@@ -605,13 +618,83 @@ class HotkeyEdit(QWidget):
             le.setPlaceholderText(tr("Klicken und Tasten drücken…"))
 
     def set_combo(self, combo: str):
+        from ..inputs import is_special
         self.edit.blockSignals(True)
-        self.edit.setKeySequence(QKeySequence(combo_to_qt(combo)))
+        if combo and is_special(combo):
+            self.edit.clear()
+            self._set_special(combo)
+        else:
+            self._set_special("")
+            self.edit.setKeySequence(QKeySequence(combo_to_qt(combo)))
         self.edit.blockSignals(False)
         self._placeholder()
 
+    def _set_special(self, combo: str):
+        from ..hotkeys import pretty
+        self.special = combo
+        self.special_lbl.setText(" " + pretty(combo) if combo else "")
+        self.special_lbl.setVisible(bool(combo))
+        self.edit.setVisible(not combo)
+
     def combo(self) -> str:
+        if self.special:
+            return self.special
         return qt_to_combo(self.edit.keySequence().toString(QKeySequence.PortableText))
+
+    def _key_done(self):
+        if self.edit.keySequence().isEmpty() and self.special:
+            return
+        self._set_special("")
+        self._emit()
+
+    def _clear(self):
+        self._stop_capture()
+        self.edit.clear()
+        self._set_special("")
+        self._placeholder()
+        self._emit()
+
+    def _capture_special(self):
+        """Naechste Maus-Seitentaste / naechsten Controller-Knopf (auch Kombi wie LB+A) aufnehmen."""
+        from .. import inputs
+        from ..i18n import tr
+        if self._cap_timer is not None:
+            self._stop_capture()
+            return
+        w = inputs.WATCHER
+        if w is None:
+            w = inputs.InputWatcher(lambda c, p: None)
+            inputs.WATCHER = w
+        self._cap_result = None
+        self._cap_left = 160                       # 8 Sekunden
+        w.start_capture(lambda combo: setattr(self, "_cap_result", combo))
+        self.edit.hide()
+        self.special_lbl.setText(" " + tr("Maus-Seitentaste oder Controller-Knopf drücken …"))
+        self.special_lbl.show()
+        self.pad_btn.setText("■")
+        self._cap_timer = QTimer(self)
+        self._cap_timer.timeout.connect(self._poll_capture)
+        self._cap_timer.start(50)
+
+    def _poll_capture(self):
+        self._cap_left -= 1
+        res = self._cap_result
+        if res is None and self._cap_left > 0:
+            return
+        self._stop_capture()
+        if res:
+            self._set_special(res)
+            self._emit()
+
+    def _stop_capture(self):
+        from .. import inputs
+        if self._cap_timer is not None:
+            self._cap_timer.stop()
+            self._cap_timer = None
+            if inputs.WATCHER is not None:
+                inputs.WATCHER.stop_capture()
+        self.pad_btn.setText("🖱🎮")
+        self._set_special(self.special)
 
     def _emit(self):
         self._placeholder()

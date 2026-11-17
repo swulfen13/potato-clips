@@ -5,7 +5,7 @@ import subprocess
 
 import soundfile as sf
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
                                QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QScrollArea,
                                QSlider, QSplitter, QToolButton, QVBoxLayout, QWidget, QCheckBox)
 
@@ -18,6 +18,11 @@ from .widgets import WaveformView
 def _fmt_dur(s: float) -> str:
     s = int(round(s))
     return f"{s // 60}:{s % 60:02d}"
+
+
+def tr_ui(t: str) -> str:
+    from ..i18n import tr
+    return tr(t)
 
 
 class ClipsTab(QWidget):
@@ -52,6 +57,11 @@ class ClipsTab(QWidget):
         self.btn_clip.setObjectName("accent")
         self.btn_clip.clicked.connect(lambda: ctl.clip_now())
         ll.addWidget(self.btn_clip)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Suchen – Name oder gesagtes Wort")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._filter)
+        ll.addWidget(self.search)
         self.list = QListWidget()
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.list.setTextElideMode(Qt.ElideRight)
@@ -84,6 +94,18 @@ class ClipsTab(QWidget):
         self.info = QLabel()
         self.info.setObjectName("muted")
         rl.addWidget(self.info)
+        tx_row = QHBoxLayout()
+        self.tx_lbl = QLabel()
+        self.tx_lbl.setWordWrap(True)
+        self.tx_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.tx_lbl.setObjectName("muted")
+        self.tx_lbl.setMaximumHeight(60)
+        self.b_tx = QPushButton("📝 Text erkennen")
+        self.b_tx.setToolTip("Was im Clip gesagt wird, offline in Text umwandeln – für Suche und Untertitel")
+        self.b_tx.clicked.connect(self._transcribe)
+        tx_row.addWidget(self.tx_lbl, 1)
+        tx_row.addWidget(self.b_tx, 0, Qt.AlignTop)
+        rl.addLayout(tx_row)
 
         lbl = QLabel("Quellen – wähle aus, was im Clip zu hören sein soll")
         lbl.setObjectName("h2")
@@ -184,7 +206,7 @@ class ClipsTab(QWidget):
         split.setSizes([300, 800])
 
         self.editor_widgets = [self.name, self.wave, self.fx_combo, b_add, self.b_prev, self.b_play,
-                               self.b_stop, self.b_sound, self.b_export, self.b_share, self.b_video, b_reset, b_last5, b_last10, b_auto]
+                               self.b_stop, self.b_sound, self.b_export, self.b_share, self.b_video, self.b_tx, b_reset, b_last5, b_last10, b_auto]
         self._enable(False)
         ctl.clipsChanged.connect(self._on_new_clip)
         self.reload()
@@ -215,6 +237,7 @@ class ClipsTab(QWidget):
             if m["id"] == cur:
                 sel_item = it
         self.list.blockSignals(False)
+        self._filter(self.search.text())
         if sel_item:
             same = self.meta is not None and sel_item.data(Qt.UserRole)["id"] == self.meta["id"]
             if same:  # aktuell bearbeiteten Clip nicht neu laden
@@ -226,6 +249,81 @@ class ClipsTab(QWidget):
                 self.list.setCurrentItem(sel_item)
         elif self.meta is not None:
             self._select(None)
+
+    def _filter(self, text: str):
+        from ..transcribe import text_of
+        t = text.lower().strip()
+        for i in range(self.list.count()):
+            it = self.list.item(i)
+            m = it.data(Qt.UserRole) or {}
+            hit = not t or t in m.get("name", "").lower() or t in text_of(m).lower()
+            it.setHidden(not hit)
+
+    # ------------------------------------------------------------ Text / Untertitel
+    def _show_transcript(self):
+        from ..transcribe import edit_sig, text_of
+        if not self.meta:
+            self.tx_lbl.clear()
+            return
+        txt = text_of(self.meta)
+        t = self.meta.get("transcript") or {}
+        if not t:
+            self.tx_lbl.setText("")
+            self.b_tx.setText("📝 Text erkennen")
+            return
+        self.b_tx.setText("📝 Neu erkennen")
+        if not txt:
+            self.tx_lbl.setText(tr_ui("(nichts Verständliches gesagt)"))
+        elif t.get("sig") != edit_sig(self.edit, getattr(self, "_wave_dur", None)):
+            self.tx_lbl.setText("„" + txt[:300] + "“  " + tr_ui("(Schnitt geändert – neu erkennen für passende Untertitel)"))
+        else:
+            self.tx_lbl.setText("„" + txt[:300] + "“")
+
+    def _transcribe(self, then=None):
+        import threading
+        from .. import triggers as trg
+        from ..transcribe import edit_sig, transcribe
+        lang = self.ctl.triggers.lang_wanted()
+        if not trg.model_ready(lang):
+            QMessageBox.information(self, "Text erkennen",
+                                    "Dafür braucht Potato Clips das Sprachpaket (ca. 45 MB).\n"
+                                    "Einstellungen → Sprach-Trigger → „Sprachpaket laden“.")
+            return
+        data = self._rendered()
+        if data is None or not len(data):
+            return
+        meta_id, sig = self.meta["id"], edit_sig(self.edit, getattr(self, "_wave_dur", None))
+        st = {"done": False, "words": None, "err": None}
+
+        def work():
+            try:
+                st["words"] = transcribe(data, lang)
+            except Exception as e:
+                st["err"] = str(e)
+            st["done"] = True
+        threading.Thread(target=work, daemon=True).start()
+        self.b_tx.setEnabled(False)
+        self.tx_lbl.setText(tr_ui("Text wird erkannt …"))
+
+        def poll():
+            if not st["done"]:
+                return
+            timer.stop()
+            self.b_tx.setEnabled(True)
+            if st["err"]:
+                self.ctl.toast.emit("Text erkennen fehlgeschlagen: " + st["err"], "warn")
+                self._show_transcript()
+                return
+            if self.meta and self.meta["id"] == meta_id:
+                self.meta["transcript"] = {"lang": lang, "sig": sig, "words": st["words"]}
+                self._save_edit()
+                self._show_transcript()
+                if then:
+                    then(st["words"])
+        timer = QTimer(self)
+        timer.timeout.connect(poll)
+        timer.start(100)
+        self._tx_timer = timer
 
     def _on_new_clip(self, cid: str):
         # neuen Clip nur automatisch oeffnen, wenn gerade nichts bearbeitet wird
@@ -248,6 +346,7 @@ class ClipsTab(QWidget):
             self.wave.set_audio(None, 0)
             self._build_stems()
             self._build_fx()
+            self._show_transcript()
             return
         self.meta = dict(item.data(Qt.UserRole))
         try:
@@ -265,6 +364,7 @@ class ClipsTab(QWidget):
         self._build_stems()
         self._build_fx()
         self._update_wave(reset_range="start" not in self.edit)
+        self._show_transcript()
 
     def _duration(self) -> float:
         return max((len(a) for a in self.stems.values()), default=0) / SR
@@ -360,6 +460,7 @@ class ClipsTab(QWidget):
             return
         mix = mix_stems(self.meta, self.stems, self.edit)
         d = len(mix) / SR
+        self._wave_dur = d
         if reset_range:
             self.edit["start"], self.edit["end"] = 0.0, d
         self.wave.set_audio(mix, d)
@@ -475,6 +576,14 @@ class ClipsTab(QWidget):
         if not self.meta:
             return
         self.meta["edit"] = self.edit
+        if "transcript" not in self.meta:          # inzwischen im Hintergrund erkannt? Nicht ueberschreiben
+            try:
+                import json
+                disk = json.loads((self.ctl.clips.dir(self.meta) / "meta.json").read_text(encoding="utf-8"))
+                if disk.get("transcript"):
+                    self.meta["transcript"] = disk["transcript"]
+            except Exception:
+                pass
         try:
             self.ctl.clips.save_meta(self.meta)
         except Exception:
@@ -482,6 +591,8 @@ class ClipsTab(QWidget):
         it = self.list.currentItem()
         if it and it.data(Qt.UserRole).get("id") == self.meta["id"]:
             it.setData(Qt.UserRole, dict(self.meta))
+        if hasattr(self, "tx_lbl"):
+            self._show_transcript()
 
     def _rendered(self):
         if not self.meta:
@@ -551,6 +662,17 @@ class ClipsTab(QWidget):
         if not dlg.exec():
             return
         fmt, title, style = dlg.values()
+        if dlg.subs.isChecked():
+            from ..transcribe import edit_sig
+            t = self.meta.get("transcript") or {}
+            if t.get("sig") == edit_sig(self.edit, getattr(self, "_wave_dur", None)):
+                self._render_video(data, fmt, title, style, t.get("words") or [])
+            else:
+                self._transcribe(then=lambda words: self._render_video(data, fmt, title, style, words))
+            return
+        self._render_video(data, fmt, title, style, None)
+
+    def _render_video(self, data, fmt, title, style, words):
         self.ctl.cfg["video_format"] = fmt
         from ..capture import safe_name
         from .. import video
@@ -568,7 +690,7 @@ class ClipsTab(QWidget):
         def work():
             try:
                 video.render_video(data, out, title, fmt, style, progress=lambda v: state.__setitem__("p", v),
-                                   cancel=cancel)
+                                   cancel=cancel, words=words)
             except Exception as e:
                 state["err"] = str(e)
             state["done"] = True
@@ -587,6 +709,7 @@ class ClipsTab(QWidget):
                     QMessageBox.warning(self, "Video fehlgeschlagen", state["err"])
                 return
             from ..share import copy_file, too_big
+            self.ctl.stats.add("videos")
             copy_file(out)
             msg = "🎬 Video fertig und kopiert – in Discord mit Strg+V einfügen"
             if too_big(out):
@@ -641,6 +764,15 @@ class VideoDialog(QDialog):
         lay.addRow("Format", self.fmt)
         lay.addRow("Text oben", self.title)
         lay.addRow("Look", self.style)
+        from .. import triggers as trg
+        self.subs = QCheckBox("Untertitel einblenden (was gesagt wird)")
+        ready = trg.model_ready(ctl.triggers.lang_wanted())
+        self.subs.setEnabled(ready)
+        self.subs.setChecked(ready and bool(ctl.cfg.get("video_subs", True)))
+        self.subs.toggled.connect(lambda v: ctl.cfg.__setitem__("video_subs", v))
+        if not ready:
+            self.subs.setToolTip("Braucht das Sprachpaket: Einstellungen → Sprach-Trigger")
+        lay.addRow("", self.subs)
         if seconds > 180:
             warn = QLabel("Der Clip ist recht lang – kürze ihn vorher, dann geht es schneller.")
             warn.setObjectName("muted")

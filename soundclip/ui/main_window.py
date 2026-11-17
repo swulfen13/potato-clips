@@ -22,6 +22,7 @@ NAV_ICONS = {
     "voice": '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
     "clips": '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.6 7.6 20 18M8.6 16.4 20 6"/>',
     "sources": '<path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/>',
+    "wrapped": '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/>',
     "settings": '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1'
                 'M4.9 19.1 7 17M17 7l2.1-2.1"/>',
 }
@@ -95,6 +96,8 @@ class MainWindow(QMainWindow):
         self.clips = ClipsTab(ctl)
         self.sources = SourcesTab(ctl)
         self.settings = SettingsTab(ctl)
+        from .wrapped_tab import WrappedTab
+        self.wrapped = WrappedTab(ctl)
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         self.nav_buttons = {}
@@ -102,6 +105,7 @@ class MainWindow(QMainWindow):
                                (self.voice, "🎭   Stimme verändern", "voice"),
                                (self.clips, "✂   Clips && Editor", "clips"),
                                (self.sources, "🎙   Quellen && Aufnahme", "sources"),
+                               (self.wrapped, "🏆   Potato Wrapped", "wrapped"),
                                (self.settings, "⚙   Einstellungen", "settings")):
             self.stack.addWidget(page)
             b = QPushButton(text)
@@ -154,6 +158,8 @@ class MainWindow(QMainWindow):
 
         self.overlay = Overlay(ctl)
         self.overlay.apply_visibility()
+        from .wheel import SoundWheel
+        self.wheel = SoundWheel(ctl)
 
         self.tray = QSystemTrayIcon(app_icon(), self)
         self.tray.setToolTip("Potato Clips")

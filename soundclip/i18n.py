@@ -491,6 +491,71 @@ _NEW12.update({
     "Du hörst deine Sounds nicht selbst – „Ich höre über“ steht auf dem Kabel (Einstellungen → Audio-Geräte)":
         "You don't hear your own sounds – “I listen on” is set to the cable (Settings → Audio devices)",
 })
+_NEW12.update({
+    # 1.5: Effekte pro Sound, Maus/Controller, Sound-Rad, Untertitel, Wrapped, Backup
+    "Kein Effekt": "No effect", "Effekt": "Effect", "Stärke des Effekts": "Effect strength",
+    "Vorhören (nur du)": "Preview (only you)", "Im Clip-Editor bearbeiten (Effekte)": "Edit in clip editor (effects)",
+    "Maus-Seitentaste oder Controller-Knopf aufnehmen": "Record a mouse side button or controller button",
+    "Maus-Seitentaste oder Controller-Knopf drücken": "Press a mouse side button or controller button",
+    "Sound-Rad (gedrückt halten)": "Sound wheel (hold)", "Sound-Rad zeigt": "Sound wheel shows",
+    "Taste festlegen unter Hotkeys → „Sound-Rad“ (z. B. Maus 5). Halten, Maus in eine Richtung, loslassen = Sound – bis zu 8 Sounds":
+        "Set the key under Hotkeys → “Sound wheel” (e.g. Mouse 5). Hold, move the mouse in a direction, release = sound – up to 8 sounds",
+    "Favoriten (und die ersten Sounds)": "Favorites (and the first sounds)", "Ordner: ": "Folder: ",
+    "Sound-Rad: noch keine Sounds im Soundboard": "Sound wheel: no sounds in the soundboard yet",
+    "Suchen – Name oder gesagtes Wort": "Search – name or spoken word",
+    "Text erkennen": "Recognize speech", "Neu erkennen": "Recognize again",
+    "Was im Clip gesagt wird, offline in Text umwandeln – für Suche und Untertitel":
+        "Turn what is said in the clip into text, offline – for search and subtitles",
+    "(nichts Verständliches gesagt)": "(nothing understandable said)",
+    "(Schnitt geändert – neu erkennen für passende Untertitel)": "(cut changed – recognize again for matching subtitles)",
+    "Text wird erkannt": "Recognizing speech",
+    "Dafür braucht Potato Clips das Sprachpaket (ca. 45 MB).\nEinstellungen → Sprach-Trigger → „Sprachpaket laden“.":
+        "Potato Clips needs the language pack for this (about 45 MB).\nSettings → Voice triggers → “Download language pack”.",
+    "Untertitel einblenden (was gesagt wird)": "Show subtitles (what is said)",
+    "Braucht das Sprachpaket: Einstellungen → Sprach-Trigger": "Needs the language pack: Settings → Voice triggers",
+    "Neue Clips in Text umwandeln": "Turn new clips into text",
+    "Offline – damit du Clips nach gesagten Wörtern suchen kannst (braucht das Sprachpaket unter „Sprach-Trigger“)":
+        "Offline – so you can search clips by spoken words (needs the language pack under “Voice triggers”)",
+    "Potato Wrapped": "Potato Wrapped", "Bild speichern & kopieren": "Save & copy image", "Zurücksetzen": "Reset",
+    "Deine Statistik – alles bleibt auf deinem PC. Teil das Bild in Discord oder als Story.":
+        "Your stats – everything stays on your PC. Share the image on Discord or as a story.",
+    "Wrapped kopiert – in Discord mit Strg+V einfügen": "Wrapped copied – paste into Discord with Ctrl+V",
+    "Statistik wirklich auf null setzen?": "Really reset your stats to zero?",
+    "seit ": "since ", "Du bist ein:": "You are a:", "Sounds abgespielt": "sounds played", "Deine Top-Sounds": "Your top sounds",
+    "noch keine": "none yet", "Clips": "Clips", "davon {n} automatisch": "{n} of them automatic", "gespeichert": "saved",
+    "Aufnahmen": "Recordings", "{n} Minuten": "{n} minutes", "Lieblings-Stimme": "Favorite voice",
+    "{n} Minuten verstellt": "{n} minutes disguised", "Sprachbefehle": "Voice commands", "mit Potato geredet": "talked to Potato",
+    "Vorgelesen": "Read aloud", "Texte": "texts", "Sound-Rad & Handy": "Sound wheel & phone",
+    "ohne Tastatur gespielt": "played without keyboard",
+    "Soundboard-Terrorist": "Soundboard terrorist", "Deine Freunde brauchen Ohropax.": "Your friends need earplugs.",
+    "Beweismittel-Sammler": "Evidence collector", "Niemand ist vor dir sicher.": "Nobody is safe from you.",
+    "Stimmen-Chamäleon": "Voice chameleon", "Wer bist du eigentlich wirklich?": "Who are you, really?",
+    "Kartoffel-Flüsterer": "Potato whisperer", "Du redest mit deiner Software. Respekt.": "You talk to your software. Respect.",
+    "Knöpfchen-Drücker": "Button masher", "Ein solider Lärm-Lieferant.": "A solid noise supplier.",
+    "Frische Kartoffel": "Fresh potato", "Das war erst der Anfang.": "This is only the beginning.",
+    "Stille Kartoffel": "Quiet potato", "Noch nichts passiert – drück mal einen Sound!": "Nothing happened yet – press a sound!",
+    "Backup & Umzug": "Backup & moving", "Backup erstellen": "Create backup", "Backup einspielen": "Restore backup",
+    "Alle Sounds, Hotkeys und Einstellungen in eine Datei – für einen neuen PC oder zur Sicherheit. Clips sind optional.":
+        "All sounds, hotkeys and settings in one file – for a new PC or just to be safe. Clips are optional.",
+    "Ersetzt Sounds und Einstellungen durch die aus dem Backup. Dein jetziger Stand wird vorher aufgehoben.":
+        "Replaces sounds and settings with the ones from the backup. Your current state is kept beforehand.",
+    "Clips auch ins Backup packen?": "Include clips in the backup?", "Clips: ca. {mb} MB": "Clips: about {mb} MB",
+    "Mit Clips": "With clips", "Ohne Clips": "Without clips", "Backup speichern": "Save backup", "Backup": "Backup",
+    "Backup wird erstellt": "Creating backup", "Backup wird vorbereitet": "Preparing backup",
+    "Backup fehlgeschlagen: ": "Backup failed: ", "Backup gespeichert: ": "Backup saved: ",
+    "{n} Sound-Dateien": "{n} sound files", "{n} Clips": "{n} clips",
+    "ohne Clips (deine Clips bleiben)": "without clips (your clips stay)",
+    "Bitte erst die Aufnahme beenden.": "Please stop the recording first.",
+    "Backup vom {when} einspielen?": "Restore the backup from {when}?",
+    "Deine jetzigen Sounds und Einstellungen werden ersetzt (aber aufgehoben). Potato Clips startet dafür neu.":
+        "Your current sounds and settings will be replaced (but kept). Potato Clips will restart for this.",
+    "Das ist keine Potato-Clips-Backup-Datei.": "This is not a Potato Clips backup file.",
+    "Diese Backup-Datei stammt nicht von Potato Clips oder ist zu neu.":
+        "This backup file is not from Potato Clips or is too new.",
+    "Das Backup ist ungewöhnlich groß – wird aus Sicherheitsgründen nicht eingespielt.":
+        "The backup is unusually large – it won't be restored for safety reasons.",
+    "Nicht genug freier Speicherplatz für das Backup.": "Not enough free disk space for the backup.",
+})
 for _k, _v in _NEW12.items():
     EN[_k] = _v
     EN.setdefault(_k.rstrip(" :…—"), _v.rstrip(" :…—"))     # tr() trennt "…" und ":" am Ende ab
@@ -513,6 +578,10 @@ EN_PATTERNS += [(re.compile(a), b) for a, b in [
     (r"^⚠ Konnte nicht gestartet werden: (.+)$", r"⚠ Could not be started: \1"),
     (r"^Sprachpaket-Download fehlgeschlagen: (.+)$", r"Language pack download failed: \1"),
     (r"^Auto-Clip (\d\d\.\d\d\. \d\d:\d\d(:\d\d)?)$", r"Auto clip \1"),
+    (r"^Text erkennen fehlgeschlagen: (.+)$", r"Speech recognition failed: \1"),
+    (r"^Ungültiger Eintrag im Backup: (.+)$", r"Invalid entry in the backup: \1"),
+    (r"^Das ist keine gültige Backup-Datei \((.+)\)\.$", r"This is not a valid backup file (\1)."),
+    (r"^Ordner: (.+)$", r"Folder: \1"),
 ]]
 
 # ---------------------------------------------------------------- Potato-Modus (Texte ueber der Sprache)

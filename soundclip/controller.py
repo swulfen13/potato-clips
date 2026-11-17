@@ -30,6 +30,7 @@ ACTION_NAMES = {
     "voice_down": "Stimmeffekt schwächer",
     "voice_hold": "Stimmeffekt nur solange gedrückt",
     "random_sound": "Zufälliger Sound",
+    "wheel_hold": "Sound-Rad (gedrückt halten)",
 }
 
 
@@ -51,6 +52,7 @@ class Controller(QObject):
     voiceCommand = Signal(str, object, str)   # Sprachbefehl: Aktion, Quellen, Anzeigename
     announceReady = Signal(object, bool)      # fertige Ansage: Audio, auch an Discord?
     speechReady = Signal(object, str)         # vorgelesener Text (vom Handy): Audio, Text
+    wheelHold = Signal(bool)                  # Sound-Rad: Taste gedrueckt / losgelassen
 
     def __init__(self):
         super().__init__()
@@ -61,6 +63,9 @@ class Controller(QObject):
         self.sources = SourceManager(self.cfg, self.mixer)
         self.sounds = SoundLibrary()
         self.clips = ClipLibrary()
+        from .stats import Stats
+        self.stats = Stats()
+        self._voice_tick = 0.0
         self.hotkeys = HotkeyManager()
         self.hotkeys.triggered.connect(self._on_hotkey)
         self.hotkey_errors: list[str] = []
@@ -80,6 +85,7 @@ class Controller(QObject):
         self.remote = RemoteServer(self)
         self.remoteCommand.connect(self.run_command)
         self.triggerFired.connect(self.play_sound)
+        self.triggerFired.connect(lambda _sid: self.stats.add("triggers"))
         self.autoClipFire.connect(lambda: self.clip_now(auto=True))
         self.voiceCommand.connect(self.run_voice_command)
         self.announceReady.connect(self._play_announce)
@@ -111,6 +117,9 @@ class Controller(QObject):
         self._idle_timer = QTimer(self)         # geladenes Update in einem ruhigen Moment installieren
         self._idle_timer.timeout.connect(self._idle_install)
         self._idle_timer.start(20 * 1000)
+        self._stats_timer = QTimer(self)        # Statistik ab und zu wegschreiben
+        self._stats_timer.timeout.connect(self.stats.save)
+        self._stats_timer.start(60 * 1000)
         self._resume_pending_update()
         try:
             self.remote.sync()
@@ -119,6 +128,7 @@ class Controller(QObject):
         self.triggers.sync()
 
     def shutdown(self):
+        self.stats.save()
         self.remote.stop()
         self.triggers.stop()
         self.autoclip.stop()
@@ -148,6 +158,8 @@ class Controller(QObject):
                 self.set_voice(enabled=False)
             else:
                 self.set_voice(arg, True)
+        elif arg.startswith("wheel_hold:"):
+            self.wheelHold.emit(arg.endswith(":down"))
         elif arg.startswith("voice_hold:"):
             down = arg.endswith(":down")
             if bool(self.cfg["voice_enabled"]) != down:
@@ -191,16 +203,16 @@ class Controller(QObject):
         if not s:
             return
         try:
-            data = self.sounds.audio(s)
+            data, gain = self.sounds.playable(s, bool(self.cfg["normalize_sounds"]))
         except Exception as e:
             self.toast.emit(f"„{s['name']}“ kann nicht geladen werden: {e}", "warn")
             return
-        gain = self.sounds.gain_for(s, data, bool(self.cfg["normalize_sounds"]))
         v = self.mixer.play(data, gain=gain, sound_id=sid, name=s["name"])
         if v is None and not self.mixer.active_targets():
             self.toast.emit("Keine Audio-Ausgabe aktiv – siehe Einstellungen", "warn")
         elif v is not None:
             self.toast.emit("▶ " + s["name"], "info")
+            self.stats.sound(sid, s["name"])
 
     # ---------------------------------------------------------- Sprachbefehle & Ansage
     def app_labels(self) -> dict:
@@ -212,6 +224,7 @@ class Controller(QObject):
 
     def run_voice_command(self, action: str, keys, label: str):
         keys = list(keys) if keys else None
+        self.stats.add("voice_cmds")
         if action == "clip":
             self.toast.emit(f"🗣 Clip: {label}" if keys else "🗣 Clip!", "info")
             self.clip_now(keys=keys, label=label)
@@ -275,6 +288,8 @@ class Controller(QObject):
 
     def run_command(self, cmd: str):
         """Befehl von Handy/Stream Deck ausfuehren (laeuft im GUI-Thread)."""
+        if cmd.startswith(("play/", "random")):
+            self.stats.add("remote")
         if cmd.startswith("play/"):
             self.play_sound(cmd[5:])
         elif cmd == "stop":
@@ -331,6 +346,7 @@ class Controller(QObject):
                     scale = 0.4 + 1.2 * self.voice_amount()
                     data = apply_chain(data, [{"type": k, "amount": min(1.0, a * scale)} for k, a in pre[1]])
                 self.speechReady.emit(data, text)
+                self.stats.add("tts")
             except Exception as e:
                 log.exception("Vorlesen")
                 self.toast.emit(f"Vorlesen fehlgeschlagen: {e}", "warn")
@@ -419,6 +435,7 @@ class Controller(QObject):
             else:
                 self.toast.emit(f"✂ Clip gespeichert ({sec:g}s): {names}", "ok")
             self.announcer.say("auto" if auto else "clip")
+            self.stats.add("autoclips" if auto else "clips")
             self.clipsChanged.emit(meta["id"])
             if self.cfg["clip_autocopy"]:
                 try:
@@ -428,8 +445,25 @@ class Controller(QObject):
                     self.shareReady.emit(str(encode(data, meta["name"])))
                 except Exception:
                     log.exception("Clip teilen")
+            self._auto_transcribe(meta)
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _auto_transcribe(self, meta: dict):
+        """Neue Clips im Hintergrund in Text umwandeln (fuer die Suche), wenn eingeschaltet."""
+        from . import triggers as trg
+        lang = self.triggers.lang_wanted()
+        if not self.cfg["clip_transcribe"] or not trg.model_ready(lang):
+            return
+        try:
+            from .library import render
+            from .transcribe import edit_sig, transcribe
+            data = render(meta, self.clips.stems(meta), meta.get("edit") or {})
+            meta["transcript"] = {"lang": lang, "sig": edit_sig(meta.get("edit") or {}, meta.get("duration")), "words": transcribe(data, lang)}
+            self.clips.save_meta(meta)
+            self.clipsChanged.emit(meta["id"])
+        except Exception:
+            log.exception("Clip in Text umwandeln")
 
     def toggle_recording(self, keys=None):
         if self.sources.recording:
@@ -454,6 +488,8 @@ class Controller(QObject):
         self.recordingChanged.emit(False)
         if meta:
             self.toast.emit(f"■ Aufnahme gespeichert ({meta['duration']:.0f}s)", "ok")
+            self.stats.add("recordings")
+            self.stats.add("rec_seconds", float(meta.get("duration") or 0))
             self.announcer.say("rec_stop")
             self.clipsChanged.emit(meta["id"])
         else:
@@ -494,6 +530,13 @@ class Controller(QObject):
 
     def _duck_tick(self):
         import time as _t
+        if self.cfg["voice_enabled"]:           # Statistik: wie lange mit welcher Stimme
+            nowv = _t.time()
+            if self._voice_tick and nowv - self._voice_tick < 1.0:
+                self.stats.voice(self.cfg["voice_preset"], nowv - self._voice_tick)
+            self._voice_tick = nowv
+        else:
+            self._voice_tick = 0.0
         want = False
         if self.cfg["duck_enabled"]:
             for v in self.mixer.playing():

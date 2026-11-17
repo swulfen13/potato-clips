@@ -55,7 +55,18 @@
   Text und Stimme sind einstellbar.
 - **Auto-Clip:** Wird es laut (Schreien, Lachen, Jubel), wird automatisch ein Clip gespeichert. Welche Apps das
   auslösen, wählst du selbst: Discord, Spotify, der Voice-Chat im Spiel, dein Mikro …
-- **Clip als Video:** MP4 mit animierter Wellenform im Hochformat (TikTok/Shorts/Reels), Quer- oder Quadratformat.
+- **Clip als Video:** MP4 mit animierter Wellenform im Hochformat (TikTok/Shorts/Reels), Quer- oder Quadratformat –
+  auf Wunsch mit **Untertiteln** (das gerade gesprochene Wort leuchtet auf).
+- **Clips durchsuchen:** Clips offline in Text umwandeln und nach gesagten Wörtern suchen.
+- **Maus- & Controller-Tasten:** Seitentasten (Maus 4/5), Mausrad-Klick und Xbox-Controller-Knöpfe (auch Kombis
+  wie LB+A) als Hotkey – auch mit Strg/Alt/Shift. Die Maus wird dabei nur „mitgehört“, nie ausgebremst.
+- **Sound-Rad:** Taste halten, Maus in eine Richtung ziehen, loslassen – der Sound spielt. Bis zu 8 Sounds
+  (Favoriten oder ein Ordner), ideal im Spiel.
+- **Effekte pro Sound:** Jedem Sound einen eigenen Effekt geben (Helium-Furz, Dämonen-Lachen …), mit Stärke und
+  Vorhören.
+- **Potato Wrapped:** Deine Statistik (Top-Sounds, Clips, Lieblings-Stimme …) als Bild zum Teilen – bleibt lokal.
+- **Backup & Umzug:** Alle Sounds, Hotkeys und Einstellungen (optional Clips) in eine `.potatobackup`-Datei und auf
+  dem neuen PC wieder einspielen. Der alte Stand wird dabei immer aufgehoben.
 - **Alles lokal.** Nichts wird hochgeladen, keine Konten und kein Tracking.
 
 ![Clips & Editor](docs/screenshot-clips.png)
@@ -96,6 +107,7 @@ Potato Clips startet danach im Hintergrund. Das Fenster zu schließen beendet es
 | Effekt stärker / schwächer | `Strg+Alt+Bild↑` / `Strg+Alt+Bild↓` |
 
 Alles ist unter Einstellungen änderbar. Sound-Hotkeys setzt du im Soundboard per Rechtsklick auf einen Sound.
+Mit dem 🖱🎮-Knopf neben einem Hotkey nimmst du stattdessen eine Maus-Seitentaste oder einen Controller-Knopf auf.
 
 ## Sprachbefehle
 
@@ -155,6 +167,9 @@ soundclip/              Python-App (PySide6-Oberfläche, Clips, Soundboard, Effe
   mixer.py              Wiedergabe an Kopfhörer und virtuelles Mikro, Stimm-Pfad
   effects.py            32 Effekte und 22 Stimm-Presets (numpy/scipy, streaming-fähig)
   fxworker.py           eigener kleiner Prozess, der live nur den Stimmeffekt rechnet
+  inputs.py             Maus-Seitentasten (Raw Input) und Xbox-Controller (XInput) als Hotkeys
+  transcribe.py         Clips offline in Text (Vosk) für Suche und Untertitel
+  backup.py / stats.py  Backup & Umzug, Statistik für Potato Wrapped
 helper/audiocap.cpp     WASAPI-Helfer (C++): Prozess-Loopback pro App, Mikro, Wiedergabe,
                         native Stimme (RNNoise, Gate, Taktausgleich), Effekt-Prozess-Anbindung
 packaging/              PyInstaller-Spec, Inno-Setup-Skript, Build-Skript

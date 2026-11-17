@@ -66,10 +66,10 @@ def _overview(data: np.ndarray, n: int) -> np.ndarray:
 
 
 def render_video(data: np.ndarray, out_path: str, title: str, fmt: str = "9:16", style: str = "pro",
-                 progress=None, cancel: threading.Event | None = None) -> str:
+                 progress=None, cancel: threading.Event | None = None, words: list | None = None) -> str:
     """Rendert das Video. progress(0..1) kommt aus diesem (Hintergrund-)Thread."""
     from PySide6.QtCore import QRectF, Qt
-    from PySide6.QtGui import QColor, QFont, QImage, QLinearGradient, QPainter, QPen
+    from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter, QPen
 
     if data is None or not len(data):
         raise ValueError("Der Clip ist leer")
@@ -114,6 +114,13 @@ def render_video(data: np.ndarray, out_path: str, title: str, fmt: str = "9:16",
         sfont = QFont("Inter")
         sfont.setPixelSize(int(22 * s))
     done_col = QColor("#FF3D8B") if pot else QColor("#F2A93B")
+    lines = []
+    if words:
+        from .transcribe import subtitle_lines
+        lines = subtitle_lines(words)
+    sub_font = QFont("Bungee" if pot else "Inter")
+    sub_font.setPixelSize(int(40 * s))
+    sub_font.setBold(True)
     if not pot:
         sub_col = QColor("#3A3E47")
     ok = False
@@ -172,6 +179,10 @@ def render_video(data: np.ndarray, out_path: str, title: str, fmt: str = "9:16",
                 p.drawRect(QRectF(margin + i * ow, oy - hh / 2, max(1.0, ow * 0.7), hh))
             p.setBrush(bar_hi if not pot else QColor("#FF3D8B"))
             p.drawRect(QRectF(margin + area_w * pos - 2 * s, oy - oh * 0.75, 4 * s, oh * 1.5))
+            # Untertitel: aktuelle Zeile, das gerade gesprochene Wort hervorgehoben
+            line = next((ln for ln in lines if ln["s"] - 0.15 <= t <= ln["e"] + 0.6), None)
+            if line:
+                _draw_subtitle(p, line, t, sub_font, W, H, margin, pot, done_col, QColor, QFontMetricsF, QRectF, Qt)
             # Zeit + Wasserzeichen
             p.setFont(sfont)
             p.setPen(sub_col)
@@ -208,3 +219,37 @@ def render_video(data: np.ndarray, out_path: str, title: str, fmt: str = "9:16",
                 os.remove(f_)
             except Exception:
                 pass
+
+
+def _draw_subtitle(p, line, t, font, W, H, margin, pot, hi_col, QColor, QFontMetricsF, QRectF, Qt):
+    """Eine Untertitel-Zeile mittig im unteren Drittel, aktuelles Wort farbig."""
+    words = [w["w"].upper() if pot else w["w"] for w in line["words"]]
+    f = type(font)(font)                           # Kopie - die Grundgroesse bleibt fuer die naechste Zeile
+    size = f.pixelSize()
+    area = W - 2 * margin
+    fm = QFontMetricsF(f)
+    space = fm.horizontalAdvance(" ")
+    total = sum(fm.horizontalAdvance(w) for w in words) + space * (len(words) - 1)
+    while total > area and size > 18:              # zu breit -> Schrift kleiner
+        size = int(size * 0.9)
+        f.setPixelSize(size)
+        fm = QFontMetricsF(f)
+        space = fm.horizontalAdvance(" ")
+        total = sum(fm.horizontalAdvance(w) for w in words) + space * (len(words) - 1)
+    p.setFont(f)
+    y = H * (0.66 if H > W else 0.70)
+    h = fm.height() * 1.35
+    box = QRectF((W - total) / 2 - 18, y - h / 2, total + 36, h)
+    p.setPen(QColor("#111") if pot else Qt.NoPen)
+    p.setBrush(QColor("#FFFFFF") if pot else QColor(0, 0, 0, 170))
+    if pot:
+        p.drawRect(box)
+    else:
+        p.drawRoundedRect(box, 12, 12)
+    x = (W - total) / 2
+    for w, word in zip(line["words"], words):
+        cur = w["s"] - 0.05 <= t <= w["e"] + 0.05
+        p.setPen(hi_col if cur else (QColor("#111") if pot else QColor("#FFFFFF")))
+        wd = fm.horizontalAdvance(word)
+        p.drawText(QRectF(x, y - h / 2, wd + 2, h), Qt.AlignVCenter | Qt.AlignLeft, word)
+        x += wd + space

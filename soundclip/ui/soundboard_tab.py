@@ -144,6 +144,8 @@ class SoundTile(QFrame):
             p.drawText(r.adjusted(12 if pot else 28, 0, -10, -9), Qt.AlignLeft | Qt.AlignBottom, tr("kein Hotkey"))
         vol = float(self.sound.get("volume", 1.0))
         extra = []
+        if isinstance(self.sound.get("fx"), dict) and self.sound["fx"].get("preset"):
+            extra.append("✨")
         if self.sound.get("trigger"):
             extra.append("🗣")
         if abs(vol - 1.0) > 0.01:
@@ -153,7 +155,7 @@ class SoundTile(QFrame):
             p.drawText(r.adjusted(14, 0, -12, -9), Qt.AlignRight | Qt.AlignBottom, " ".join(extra))
 
 class SoundDialog(QDialog):
-    def __init__(self, sound: dict, parent=None, folders=()):
+    def __init__(self, sound: dict, parent=None, folders=(), preview=None):
         super().__init__(parent)
         self.setWindowTitle("Sound bearbeiten")
         self.setMinimumWidth(420)
@@ -188,6 +190,32 @@ class SoundDialog(QDialog):
         lay.addRow("Farbe", self.color_btn)
         lay.addRow("Ordner", self.folder)
         lay.addRow("Sprach-Trigger", self.trigger)
+        # Effekt nur fuer diesen Sound
+        from ..effects import VOICE_PRESETS, voice_name
+        from ..i18n import tr as _tr
+        fx = sound.get("fx") if isinstance(sound.get("fx"), dict) else {}
+        self.fx = QComboBox()
+        self.fx.addItem("Kein Effekt", "")
+        for k in VOICE_PRESETS:
+            self.fx.addItem(f"{VOICE_PRESETS[k][0]} {_tr(voice_name(k))}", k)
+        self.fx.setCurrentIndex(max(0, self.fx.findData(fx.get("preset", ""))))
+        self.fx_amt = QSlider(Qt.Horizontal)
+        self.fx_amt.setRange(0, 100)
+        self.fx_amt.setValue(int(round(float(fx.get("amount", 0.5)) * 100)))
+        self.fx_amt.setFixedWidth(120)
+        self.fx_amt.setToolTip("Stärke des Effekts")
+        frow = QHBoxLayout()
+        frow.addWidget(self.fx, 1)
+        frow.addWidget(self.fx_amt)
+        if preview is not None:
+            b_prev = QPushButton("▶")
+            b_prev.setToolTip("Vorhören (nur du)")
+            b_prev.setFixedWidth(40)
+            b_prev.clicked.connect(lambda: preview(self._fx_value()))
+            frow.addWidget(b_prev)
+        self.fx.currentIndexChanged.connect(lambda _: self.fx_amt.setEnabled(bool(self.fx.currentData())))
+        self.fx_amt.setEnabled(bool(self.fx.currentData()))
+        lay.addRow("Effekt", frow)
         hint = QLabel("Tipp: Hotkeys funktionieren global – auch im Spiel.\n"
                       "Sprach-Trigger: Sagst du das Wort, spielt der Sound (in den Einstellungen einschalten).")
         hint.setObjectName("muted")
@@ -207,7 +235,12 @@ class SoundDialog(QDialog):
     def values(self) -> dict:
         return {"name": self.name.text().strip() or "Sound", "hotkey": self.hotkey.combo(),
                 "volume": self.vol.value() / 100.0, "color": self.color,
-                "folder": self.folder.currentText().strip()[:40], "trigger": self.trigger.text().strip()[:80]}
+                "folder": self.folder.currentText().strip()[:40], "trigger": self.trigger.text().strip()[:80],
+                "fx": self._fx_value()}
+
+    def _fx_value(self):
+        k = self.fx.currentData()
+        return {"preset": k, "amount": self.fx_amt.value() / 100.0} if k else None
 
 
 class TrimDialog(QDialog):
@@ -693,6 +726,7 @@ class SoundboardTab(QWidget):
                         chain = [{"type": k, "amount": min(1.0, a * scale)} for k, a in pre[1]]
                         data = apply_chain(data, chain)
                 self._spoken_result = (text, data, save)
+                ctl.stats.add("tts")
             except Exception as e:
                 ctl.toast.emit(f"Vorlesen fehlgeschlagen: {e}", "warn")
                 self._spoken_result = False
@@ -716,6 +750,19 @@ class SoundboardTab(QWidget):
             self.ctl.toast.emit(f"„{s['name']}“ ist jetzt im Soundboard – Rechtsklick drauf für Hotkey", "ok")
         else:
             self.ctl.mixer.play(data, sound_id="__tts__", name=text[:40])
+
+    def _preview_fx(self, sid, fx):
+        s = self.ctl.sounds.get(sid)
+        if not s:
+            return
+        tmp = dict(s, fx=fx)
+        try:
+            data, gain = self.ctl.sounds.playable(tmp, bool(self.ctl.cfg["normalize_sounds"]))
+        except Exception as e:
+            QMessageBox.warning(self, "Fehler", str(e))
+            return
+        self.ctl.mixer.stop("__preview__")
+        self.ctl.mixer.play(data, gain=gain, sound_id="__preview__", name=s["name"], preview=True)
 
     def _copy_link(self, sid):
         from PySide6.QtWidgets import QApplication
@@ -786,7 +833,7 @@ class SoundboardTab(QWidget):
         elif act == a_link:
             self._copy_link(sid)
         elif act == a_edit:
-            dlg = SoundDialog(s, self, self._folders())
+            dlg = SoundDialog(s, self, self._folders(), preview=lambda fx, sid=sid: self._preview_fx(sid, fx))
             if dlg.exec():
                 vals = dlg.values()
                 self.ctl.sounds.update(sid, **vals)

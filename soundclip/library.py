@@ -34,6 +34,7 @@ def _unique(path: Path) -> Path:
 class SoundLibrary:
     def __init__(self):
         self.lock = threading.RLock()
+        self._fx_cache: dict = {}
         self.sounds: list[dict] = []
         if SOUNDS_FILE.exists():
             try:
@@ -141,6 +142,41 @@ class SoundLibrary:
         except Exception:
             pass
         self.save()
+
+    # ---- Effekt pro Sound
+    @staticmethod
+    def fx_chain(s: dict) -> list:
+        """Effektkette eines Sounds ({"preset": Stimmeffekt, "amount": 0..1}) - leer, wenn keiner gesetzt ist."""
+        from .effects import VOICE_PRESETS
+        fx = s.get("fx") or {}
+        pre = VOICE_PRESETS.get(fx.get("preset", "")) if isinstance(fx, dict) else None
+        if not pre:
+            return []
+        scale = 0.4 + 1.2 * float(np.clip(float(fx.get("amount", 0.5)), 0.0, 1.0))
+        return [{"type": k, "amount": min(1.0, a * scale)} for k, a in pre[1]]
+
+    def playable(self, s: dict, normalize: bool) -> tuple[np.ndarray, float]:
+        """Audio so, wie es abgespielt wird (zugeschnitten, mit Effekt) und die passende Lautstaerke.
+        Sounds mit Effekt werden einmal berechnet und dann zwischengespeichert."""
+        chain = self.fx_chain(s)
+        if not chain:
+            data = self.audio(s)
+            return data, self.gain_for(s, data, normalize)
+        try:
+            mtime = self.path(s).stat().st_mtime
+        except OSError:
+            mtime = 0
+        key = (s["id"], mtime, tuple(s.get("trim") or ()), repr(chain))
+        hit = self._fx_cache.get(key)
+        if hit is None:
+            processed = apply_chain(self.audio(s), chain)
+            hit = (processed, norm_gain(processed))
+            if len(self._fx_cache) > 24:
+                self._fx_cache.clear()
+            self._fx_cache[key] = hit
+        data, ng = hit
+        g = float(s.get("volume", 1.0))
+        return data, (g * ng if normalize else g)
 
     def gain_for(self, s: dict, data: np.ndarray | None, normalize: bool) -> float:
         """Abspiel-Lautstaerke: eigene Lautstaerke x Angleichung (wird beim ersten Mal gemessen)."""

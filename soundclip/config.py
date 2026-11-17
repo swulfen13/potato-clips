@@ -88,6 +88,7 @@ DEFAULTS: dict = {
     "normalize_sounds": True,         # alle Sounds ungefaehr gleich laut
     "auto_trim": True,                # Stille vorne/hinten beim Import abschneiden
     "sound_folders": [],              # Reihenfolge der Ordner (auch leere)
+    "wheel_source": "fav",            # Sound-Rad: "fav" (Favoriten zuerst) oder ein Ordnername
     # Fernbedienung / Stream Deck / OBS
     "remote_enabled": False,          # Handy im WLAN
     "api_enabled": False,             # Links fuer Stream Deck / OBS (nur dieser PC)
@@ -112,6 +113,8 @@ DEFAULTS: dict = {
     "announce_recording": True,       # auch bei Aufnahme Start/Ende
     # Video
     "video_format": "9:16",
+    "video_subs": True,               # Untertitel im Video (wenn das Sprachpaket da ist)
+    "clip_transcribe": False,         # neue Clips automatisch in Text umwandeln (Suche)
     # Oberflaeche
     "overlay_enabled": True,
     "overlay_corner": "top-right",
@@ -128,6 +131,7 @@ DEFAULTS: dict = {
         "voice_down": "ctrl+alt+page down",
         "voice_hold": "",
         "random_sound": "",
+        "wheel_hold": "",
     },
 }
 

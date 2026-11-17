@@ -110,6 +110,28 @@ def german_leftovers():
 new_checks = {}
 
 
+def clip_search_test():
+    c = win.clips
+    n = c.list.count()
+    c.search.setText("zzzqqq")
+    hidden = sum(c.list.item(i).isHidden() for i in range(n))
+    c.search.setText("")
+    shown = sum(not c.list.item(i).isHidden() for i in range(n))
+    print("CHECK Clip-Suche:", "OK" if n and hidden == n and shown == n else "FEHLER", n, hidden, shown)
+
+
+def wrapped_test():
+    ctl.play_sound(s1["id"])
+    ctl.stats.add("clips", 2)
+    win.tabs.setCurrentWidget(win.wrapped)
+
+
+def wrapped_check():
+    pm = win.wrapped.view.pixmap()
+    print("CHECK Wrapped-Seite:", "OK" if pm is not None and not pm.isNull() and ctl.stats.summary()["plays"] >= 1
+          else "FEHLER")
+
+
 def remote_test():
     """Stream-Deck-Links gegen den echten Controller (Server nur auf 127.0.0.1)."""
     import json, urllib.request
@@ -342,6 +364,10 @@ step(1500, rec_stop)
 step(100, make_clip)
 step(1200, open_clip)
 step(800, shot("2_clips"))
+step(100, clip_search_test)
+step(100, wrapped_test)
+step(800, wrapped_check)
+step(100, shot("8_wrapped"))
 step(100, voice_cmd_test)
 step(4000, voice_cmd_check)
 step(100, lambda: (win.tabs.setCurrentWidget(win.voice), ctl.set_voice("potato", True)))
@@ -365,6 +391,8 @@ step(100, lambda: win.settings._goto("fernbedienung"))
 step(500, shot("4f_einstellungen_fernbedienung"))
 step(100, lambda: win.settings._goto("trigger"))
 step(500, shot("4g_einstellungen_trigger"))
+step(100, lambda: win.settings._goto("backup"))
+step(500, shot("4h_einstellungen_backup"))
 step(100, overlay_shot)
 step(800, wizard_lang_test)
 step(2500, finish)

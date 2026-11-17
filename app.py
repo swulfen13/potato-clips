@@ -101,8 +101,6 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("Potato Clips")
-    _setup_look(app)
-    app.setQuitOnLastWindowClosed(False)
 
     # nur eine Instanz: zweite Instanz holt das Fenster nach vorne
     sock = QLocalSocket()
@@ -112,6 +110,15 @@ def main():
         sock.flush()
         sock.waitForBytesWritten(300)
         return 0
+
+    try:  # vorbereitetes Backup einspielen (nur hier, wenn sicher keine andere Instanz laeuft)
+        from soundclip import backup
+        backup.apply_pending()
+    except Exception:
+        log.exception("Backup einspielen")
+
+    _setup_look(app)
+    app.setQuitOnLastWindowClosed(False)
 
     from soundclip.controller import Controller
     from soundclip.ui.main_window import MainWindow

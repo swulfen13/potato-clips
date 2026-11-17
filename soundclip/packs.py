@@ -33,6 +33,8 @@ def export_pack(lib, sound_ids: list[str], dest: str | Path) -> int:
                     "color": s.get("color", ""), "folder": s.get("folder", "")}
             if s.get("trim"):
                 item["trim"] = list(s["trim"])
+            if isinstance(s.get("fx"), dict):
+                item["fx"] = {"preset": str(s["fx"].get("preset", "")), "amount": float(s["fx"].get("amount", 0.5))}
             items.append(item)
         z.writestr("pack.json", json.dumps({"format": 1, "app": "Potato Clips", "sounds": items},
                                            indent=2, ensure_ascii=False))
@@ -75,6 +77,14 @@ def import_pack(lib, src: str | Path) -> int:
                 if col.startswith("#") and len(col) in (4, 7):
                     e["color"] = col
                 e["folder"] = str(item.get("folder") or "")[:40]
+                fx = item.get("fx")
+                if isinstance(fx, dict):
+                    from .effects import VOICE_PRESETS
+                    try:
+                        if str(fx.get("preset")) in VOICE_PRESETS:
+                            e["fx"] = {"preset": str(fx["preset"]), "amount": min(1.0, max(0.0, float(fx.get("amount", 0.5))))}
+                    except (TypeError, ValueError):
+                        pass
                 try:
                     t = item.get("trim")
                     if t and len(t) == 2 and 0 <= float(t[0]) < float(t[1]):

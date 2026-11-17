@@ -58,6 +58,9 @@ def combo_to_qt(combo: str) -> str:
 def pretty(combo: str) -> str:
     if not combo:
         return ""
+    if "mouse:" in combo or "pad:" in combo:
+        from .inputs import pretty as _p
+        return _p(combo)
     from . import i18n
     txt = combo_to_qt(combo).replace("Meta", "Win")
     return txt if i18n.LANG == "en" else txt.replace("Ctrl", "Strg")
@@ -70,6 +73,8 @@ class HotkeyManager(QObject):
         super().__init__()
         self._handles = []
         self.paused = False
+        self._special: dict[str, list[str]] = {}     # Maus/Gamepad: Kombination -> Aktionen
+        self.inputs = None
 
     def set_bindings(self, mapping: dict[str, str]) -> list[str]:
         for h in self._handles:
@@ -80,11 +85,16 @@ class HotkeyManager(QObject):
         self._handles = []
         errors = []
         used = {}
+        special: dict[str, list[str]] = {}
         for name, combo in mapping.items():
             if not combo:
                 continue
             if combo in used:
                 errors.append(f"„{pretty(combo)}“ doppelt belegt ({used[combo]} / {name})")
+                continue
+            if "mouse:" in combo or "pad:" in combo:
+                special.setdefault(combo, []).append(name)
+                used[combo] = name
                 continue
             try:
                 if name.endswith("_hold"):
@@ -100,7 +110,29 @@ class HotkeyManager(QObject):
             except Exception as e:
                 errors.append(f"„{combo}“: {e}")
                 log.warning("Hotkey %s=%s: %s", name, combo, e)
+        self._special = special
+        if special or self.inputs is not None:
+            try:
+                self.watcher().set_combos(special.keys())
+            except Exception as e:
+                errors.append(f"Maus/Controller: {e}")
+                log.exception("Maus/Controller")
         return errors
+
+    def watcher(self):
+        """Maus-/Gamepad-Abfrage (wird erst gestartet, wenn sie gebraucht wird)."""
+        if self.inputs is None:
+            from . import inputs
+            self.inputs = inputs.InputWatcher(self._special_event)
+            inputs.WATCHER = self.inputs
+        return self.inputs
+
+    def _special_event(self, combo: str, pressed: bool):
+        for name in self._special.get(combo, []):
+            if name.endswith("_hold"):
+                self._fire(name + (":down" if pressed else ":up"))
+            elif pressed:
+                self._fire(name)
 
     def _fire(self, name):
         if not self.paused:
@@ -111,3 +143,5 @@ class HotkeyManager(QObject):
             keyboard.unhook_all()
         except Exception:
             pass
+        if self.inputs is not None:
+            self.inputs.shutdown()
