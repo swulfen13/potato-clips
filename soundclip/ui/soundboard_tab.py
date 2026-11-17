@@ -533,8 +533,12 @@ class SoundboardTab(QWidget):
         m = self.ctl.mixer
         parts = []
         from ..i18n import tr
-        parts.append("🎧 " + (m.devices["monitor"] if m.is_open("monitor")
-                             else tr("Fehler:") + " " + str(m.errors["monitor"])))
+        if m.is_open("monitor") and "CABLE" in str(m.devices["monitor"]).upper():
+            parts.append("🎧 ⚠ " + tr("Du hörst deine Sounds nicht selbst – „Ich höre über“ steht auf dem Kabel "
+                                      "(Einstellungen → Audio-Geräte)"))
+        else:
+            parts.append("🎧 " + (m.devices["monitor"] if m.is_open("monitor")
+                                 else tr("Fehler:") + " " + str(m.errors["monitor"])))
         if m.is_open("virtual"):
             parts.append("🎙 " + tr("Freunde über:") + " " + m.devices["virtual"])
         else:

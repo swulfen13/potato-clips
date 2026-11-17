@@ -187,6 +187,10 @@ def wizard_lang_test():
         app.processEvents()
     after = w.next.text()
     w.grab().save(os.path.join(OUT, "8_assistent_umgeschaltet.png"))
+    w._go(w.stack.count() - 1)
+    app.processEvents()
+    w.grab().save(os.path.join(OUT, "8b_assistent_fertig.png"))
+    new_checks["Assistent fragt Updates"] = w.upd.count() == 3 and hasattr(w, "auto_sw")
     new_checks["Assistent wechselt Sprache sofort"] = bool(before and after and before != after)
     print("Assistent:", before, "->", after)
     w._restarting = True          # im Test nicht neu starten
@@ -198,6 +202,84 @@ def wizard_lang_test():
     w.setParent(None)
     w.deleteLater()
     print("Sprache nach Assistent-Test:", i18n.LANG)
+
+
+def update_flow_test():
+    """Update-Ablauf im echten Controller - Installer wird NICHT gestartet (Signale werden abgefangen)."""
+    from soundclip import updater
+    import tempfile
+    got = {"found": [], "ready": [], "install": [], "tray": [], "asked": []}
+    win.tray.showMessage = lambda *a, **k: got["tray"].append(a[0] if a else "")   # keine echte Windows-Meldung
+    win._ask_update = lambda info: got["asked"].append(info["version"])            # kein Dialog im Test
+    try:
+        ctl.installUpdate.disconnect()
+    except Exception:
+        pass
+    ctl.installUpdate.connect(lambda p: got["install"].append(p))
+    ctl.updateReady.connect(lambda v: got["ready"].append(v))
+    ctl.updateFound.connect(lambda i: got["found"].append(i["version"]))
+    fake = os.path.join(tempfile.gettempdir(), "PotatoClips-Setup-9.0.0.exe")
+    open(fake, "wb").write(b"x")
+    orig = (updater.check, updater.download, updater.can_self_update)
+    updater.check = lambda: {"version": "9.0.0", "url": "https://github.com/x/PotatoClips-Setup-9.0.0.exe",
+                             "sha256": "", "page": ""}
+    updater.download = lambda url, progress=None, sha256="": __import__("pathlib").Path(fake)
+    updater.can_self_update = lambda: True
+    created["upd"] = (got, orig, fake)
+    # Modus automatisch: laden, dann im ruhigen Moment installieren
+    ctl.cfg.update(update_mode="auto", last_update_check=0)
+    ctl.set_voice(enabled=False)
+    ctl.mixer.stop_all()
+    from soundclip import i18n
+    print("Sprache beim Update-Start:", i18n.LANG)
+    ctl.check_updates(auto=True)
+
+
+def update_flow_check():
+    from soundclip import updater
+    got, orig, fake = created["upd"]
+    from soundclip import i18n
+    print("Sprache beim Update-Check:", i18n.LANG, "| tr-Test:", __import__("soundclip.i18n").i18n.tr("Update geladen"))
+    new_checks["Auto-Update geladen"] = got["ready"] == ["9.0.0"] and ctl.pending_update == fake
+    ctl._last_busy = time.time()
+    ctl._idle_install()
+    new_checks["Nicht installiert, solange etwas los war"] = not got["install"]
+    ctl._last_busy = time.time() - 700
+    ctl._idle_install()
+    new_checks["Installiert im ruhigen Moment"] = got["install"] == [fake] and not ctl.pending_update
+    # Modus fragen, Fenster nicht aktiv -> nur Tray-Meldung, Dialog erst beim Oeffnen
+    ctl.cfg.update(update_mode="ask", last_update_check=0, update_declined={})
+    ctl.check_updates(auto=True)
+    created["upd2"] = True
+
+
+def update_flow_check2():
+    from soundclip import updater
+    got, orig, fake = created["upd"]
+    new_checks["Fragen-Modus meldet"] = got["found"] == ["9.0.0"] and (got["asked"] or got["tray"])
+    print("Tray-Meldungen:", got["tray"], "Dialoge:", got["asked"])
+    # Nein geklickt -> 3 Tage Ruhe fuer diese Version
+    ctl.decline_update("9.0.0")
+    ctl.cfg["last_update_check"] = 0
+    ctl.check_updates(auto=True)
+    created["upd3"] = len(got["found"])
+
+
+def update_flow_check3():
+    from soundclip import updater
+    got, orig, fake = created["upd"]
+    new_checks["Abgelehnte Version stoert nicht"] = len(got["found"]) == created["upd3"]
+    ctl.cfg.update(update_mode="off", last_update_check=0)
+    ctl.check_updates(auto=True)
+    new_checks["Aus heisst aus"] = not ctl._update_busy
+    updater.check, updater.download, updater.can_self_update = orig
+    win._pending_ask = None
+    try:
+        os.remove(fake)
+    except Exception:
+        pass
+    print("Update-Ablauf:", {k: v for k, v in new_checks.items() if "pdate" in k or "Modus" in k or "Version" in k
+                             or "Aus" in k or "ruhig" in k or "los" in k})
 
 
 dialogs = []
@@ -248,7 +330,10 @@ step(100, lambda: win.soundboard._set_folder(""))
 step(100, remote_test)
 step(400, remote_check)
 step(100, lambda: ctl.mixer.stop_all())
-step(100, wizard_lang_test)
+step(100, update_flow_test)
+step(1500, update_flow_check)
+step(1500, update_flow_check2)
+step(1500, update_flow_check3)
 step(100, dialog_shots)
 step(500, lambda: win.tabs.setCurrentWidget(win.sources))
 step(1200, shot("3_quellen"))
@@ -281,7 +366,8 @@ step(500, shot("4f_einstellungen_fernbedienung"))
 step(100, lambda: win.settings._goto("trigger"))
 step(500, shot("4g_einstellungen_trigger"))
 step(100, overlay_shot)
-step(1200, finish)
+step(800, wizard_lang_test)
+step(2500, finish)
 
 acc = 0
 for d, fn in steps:

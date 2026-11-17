@@ -169,7 +169,7 @@ class MainWindow(QMainWindow):
         a_stop = QAction("■  Alle Sounds stoppen", self)
         a_stop.triggered.connect(ctl.stop_all)
         a_quit = QAction("Beenden", self)
-        a_quit.triggered.connect(self.quit)
+        a_quit.triggered.connect(self._quit_from_tray)
         for a in (a_open, a_clip, self.a_rec, a_stop, a_ov):
             menu.addAction(a)
         menu.addSeparator()
@@ -179,6 +179,10 @@ class MainWindow(QMainWindow):
                                                                            QSystemTrayIcon.DoubleClick) else None)
         self.tray.show()
         self._tray_hint_shown = False
+        self._pending_ask = None
+        self.tray.messageClicked.connect(self._tray_message_clicked)
+        ctl.updateReady.connect(self._update_ready)
+        ctl.installUpdate.connect(self._install_update)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -194,21 +198,69 @@ class MainWindow(QMainWindow):
         SetupWizard(self.ctl, self).exec()
 
     def _update_found(self, info: dict):
+        """Neue Version: Fenster offen -> gleich fragen; sonst nur dezent im Tray melden (nicht mitten im Spiel)."""
+        from ..i18n import tr
+        if self.isVisible() and not self.isMinimized() and self.isActiveWindow():
+            self._ask_update(info)
+            return
+        self._pending_ask = info
+        self.tray.showMessage(tr("Update verfügbar"),
+                              tr("Potato Clips {v} ist da – hier klicken zum Aktualisieren").format(
+                                  v=info.get("version", "?")), app_icon(), 8000)
+
+    def _tray_message_clicked(self):
+        self.show_normal()
+
+    def _update_ready(self, ver: str):
+        from ..i18n import tr
+        self.tray.showMessage(tr("Update geladen"),
+                              tr("Potato Clips {v} wird installiert, sobald gerade nichts los ist "
+                                 "(oder beim Beenden).").format(v=ver), app_icon(), 6000)
+
+    def _install_update(self, path: str):
+        from .. import updater
+        from ..i18n import tr
+        self.ctl.toast.emit("⬇ Update wird installiert – Potato Clips startet gleich neu", "info")
+        self.tray.showMessage(tr("Update wird installiert"), tr("Potato Clips startet gleich neu."), app_icon(), 4000)
+
+        def go():
+            try:
+                updater.run_installer(path)
+            except Exception as e:
+                self.ctl.toast.emit("Update fehlgeschlagen: " + str(e), "warn")
+                return
+            self.quit()
+        QTimer.singleShot(2500, go)
+
+    def _quit_from_tray(self):
+        """Beenden ueber das Tray: ein schon geladenes Update noch schnell installieren (ohne Neustart)."""
+        p = self.ctl.take_pending_update()
+        if p:
+            from .. import updater
+            try:
+                updater.run_installer(p, relaunch=False)
+            except Exception:
+                pass
+        self.quit()
+
+    def _ask_update(self, info: dict):
         from PySide6.QtWidgets import QMessageBox
         from .. import updater
         from ..i18n import tr
+        self._pending_ask = None
         ver = info.get("version", "?")
         r = QMessageBox.question(self, tr("Update verfügbar"),
                                  tr("Potato Clips {v} ist da. Jetzt aktualisieren?").format(v=ver))
         if r != QMessageBox.Yes:
+            self.ctl.decline_update(ver)
             return
         if not (updater.can_self_update() and info.get("url")):
             import webbrowser
             webbrowser.open(info.get("page") or updater.PAGE)
             return
-        self._download_update(info["url"])
+        self._download_update(info["url"], info.get("sha256", ""))
 
-    def _download_update(self, url):
+    def _download_update(self, url, sha256=""):
         import threading
         from PySide6.QtWidgets import QProgressDialog
         from .. import updater
@@ -220,7 +272,7 @@ class MainWindow(QMainWindow):
 
         def work():
             try:
-                state["path"] = updater.download(url, lambda f: state.__setitem__("p", f))
+                state["path"] = updater.download(url, lambda f: state.__setitem__("p", f), sha256)
             except Exception as e:
                 state["err"] = str(e)
         threading.Thread(target=work, daemon=True).start()
@@ -299,6 +351,9 @@ class MainWindow(QMainWindow):
         self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
         self.raise_()
         self.activateWindow()
+        if self._pending_ask:
+            info = self._pending_ask
+            QTimer.singleShot(400, lambda: self._ask_update(info))
 
     def closeEvent(self, e):
         if not self.quitting and self.ctl.cfg["minimize_to_tray"] and QSystemTrayIcon.isSystemTrayAvailable():

@@ -474,6 +474,23 @@ _NEW12.update({
     "Gerade erkennbare Apps": "Apps it can recognize right now",
     "Wort kennt die Erkennung nicht": "The recognizer doesn't know this word",
 })
+_NEW12.update({
+    # 1.4: Updates, Autostart im Assistenten, Kabel-Warnung
+    "Automatisch installieren": "Install automatically", "Immer fragen": "Always ask", "Updates": "Updates",
+    "Schaut alle paar Stunden kurz bei GitHub nach. „Automatisch“ installiert erst, wenn 10 Minuten lang nichts los ist (kein Call, keine Aufnahme) – sonst beim Beenden":
+        "Checks GitHub every few hours. “Automatically” only installs after 10 quiet minutes (no call, no recording) – otherwise when you quit",
+    "Mit Windows starten (läuft unauffällig im Tray)": "Start with Windows (runs quietly in the tray)",
+    "Update geladen": "Update downloaded", "Update wird installiert": "Installing update",
+    "Potato Clips startet gleich neu.": "Potato Clips will restart in a moment.",
+    "Update wird installiert – Potato Clips startet gleich neu": "Installing update – Potato Clips will restart in a moment",
+    "Potato Clips {v} ist da – hier klicken zum Aktualisieren": "Potato Clips {v} is out – click here to update",
+    "Potato Clips {v} wird installiert, sobald gerade nichts los ist (oder beim Beenden).":
+        "Potato Clips {v} will be installed as soon as nothing is going on (or when you quit).",
+    "Hier steht das virtuelle Kabel – dann hörst du deine Sounds nicht selbst. Wähle deinen Kopfhörer oder „Windows-Standard“.":
+        "This is set to the virtual cable – you won't hear your own sounds. Pick your headphones or “Windows default”.",
+    "Du hörst deine Sounds nicht selbst – „Ich höre über“ steht auf dem Kabel (Einstellungen → Audio-Geräte)":
+        "You don't hear your own sounds – “I listen on” is set to the cable (Settings → Audio devices)",
+})
 for _k, _v in _NEW12.items():
     EN[_k] = _v
     EN.setdefault(_k.rstrip(" :…—"), _v.rstrip(" :…—"))     # tr() trennt "…" und ":" am Ende ab

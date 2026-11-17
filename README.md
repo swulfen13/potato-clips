@@ -36,7 +36,9 @@
 - **Lautstärke-Ducking:** Während ein Sound läuft, werden andere Apps (optional auch Discord) leiser.
 - **Clips schnell teilen:** Clip als MP3 in die Zwischenablage kopieren und direkt in Discord einfügen.
 - **Sound-Packs:** Sounds als `.potatopack` exportieren und Freunden schicken; Import per Reinziehen.
-- **Auto-Updates:** Prüft auf neue Versionen auf GitHub und installiert sie auf Wunsch.
+- **Updates:** Schaut alle paar Stunden auf GitHub nach (auch während die App läuft). Wahlweise *automatisch
+  installieren* (erst wenn 10 Minuten lang nichts los ist – kein Call, keine Aufnahme – sonst beim Beenden),
+  *immer fragen* oder *aus*. Downloads werden per Prüfsumme kontrolliert.
 - **Ordner, Suche & Favoriten:** Sounds in Ordner sortieren, Favoriten nach oben, 🎲 Zufalls-Sound (auch per Hotkey).
 - **Alle Sounds gleich laut:** Lautstärke wird automatisch angeglichen; Stille am Anfang wird beim Import
   abgeschnitten. Jeder Sound lässt sich zuschneiden.

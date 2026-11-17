@@ -81,6 +81,9 @@ DEFAULTS: dict = {
     "clip_autocopy": False,           # neue Clips sofort als MP3 in die Zwischenablage
     "update_check": True,             # beim Start nach Updates schauen
     "last_update_check": 0,
+    "update_mode": None,              # auto | ask | off  (None = wie update_check: ask/off)
+    "update_declined": {},
+    "pending_update": "",             # schon geladener Installer (wird beim naechsten Start installiert)            # {"version", "at"}: Nein geklickt -> 3 Tage Ruhe fuer diese Version
     # Soundboard
     "normalize_sounds": True,         # alle Sounds ungefaehr gleich laut
     "auto_trim": True,                # Stille vorne/hinten beim Import abschneiden

@@ -225,6 +225,26 @@ class SetupWizard(QDialog):
             r.addStretch(1)
             r.addWidget(b)
             v.addLayout(r)
+        from .settings_tab import UPDATE_MODES
+        from .. import autostart
+        opt = QHBoxLayout()
+        opt.addWidget(QLabel("Updates"))
+        opt.addStretch(1)
+        self.upd = QComboBox()
+        for k, t in UPDATE_MODES:
+            self.upd.addItem(t, k)
+        self.upd.setCurrentIndex(max(0, self.upd.findData(self.ctl.update_mode())))
+        self.upd.setMinimumWidth(240)
+        opt.addWidget(self.upd)
+        v.addSpacing(8)
+        v.addLayout(opt)
+        opt2 = QHBoxLayout()
+        opt2.addWidget(QLabel("Mit Windows starten (läuft unauffällig im Tray)"))
+        opt2.addStretch(1)
+        self.auto_sw = ToggleSwitch()
+        self.auto_sw.setChecked(autostart.is_enabled())
+        opt2.addWidget(self.auto_sw)
+        v.addLayout(opt2)
         t = QLabel("Sounds legst du im Soundboard an (einfach Dateien reinziehen). Alles andere findest du in den "
                    "Einstellungen.")
         t.setWordWrap(True)
@@ -289,8 +309,25 @@ class SetupWizard(QDialog):
             self.ctl.sources.rebuild()
         self.ctl.settingsChanged.emit()
 
+    def _apply_extras(self):
+        """Letzte Seite: Updates und Autostart uebernehmen."""
+        if not hasattr(self, "upd"):
+            return
+        try:
+            m = self.upd.currentData()
+            self.ctl.cfg.update(update_mode=m, update_check=m != "off")
+            from .. import autostart
+            if self.auto_sw.isChecked() != autostart.is_enabled():
+                autostart.enable() if self.auto_sw.isChecked() else autostart.disable()
+            self.ctl.settingsChanged.emit()
+        except Exception:
+            import logging
+            logging.getLogger("soundclip").exception("Assistent: Updates/Autostart")
+
     def _finish(self):
         self._stop_probes()
+        if self.stack.currentIndex() == self.stack.count() - 1:
+            self._apply_extras()
         self.ctl.cfg["setup_done"] = True
         self.ctl.cfg["language"] = self.lang.currentData() if self.stack.count() else self._lang_choice
         self.accept()

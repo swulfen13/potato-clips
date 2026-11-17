@@ -1,6 +1,7 @@
 """Updates: neue Version auf GitHub finden, Installer laden und starten."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -33,21 +34,26 @@ def check() -> dict | None:
     tag = data.get("tag_name", "")
     if _ver(tag) <= _ver(__version__):
         return None
-    url = ""
+    url, sha = "", ""
     for a in data.get("assets", []):
         if a.get("name", "").lower().endswith(".exe") and "setup" in a.get("name", "").lower():
             url = a.get("browser_download_url", "")
-    return {"version": tag.lstrip("vV"), "url": url, "notes": data.get("body", "")[:1500],
+            dg = str(a.get("digest") or "")
+            sha = dg.split(":", 1)[1].lower() if dg.lower().startswith("sha256:") else ""
+    return {"version": tag.lstrip("vV"), "url": url, "sha256": sha, "notes": data.get("body", "")[:1500],
             "page": data.get("html_url", PAGE)}
 
 
-def download(url: str, progress=None) -> Path:
-    """Installer nach %TEMP% laden. progress(0..1) wird zwischendurch aufgerufen."""
+def download(url: str, progress=None, sha256: str = "") -> Path:
+    """Installer nach %TEMP% laden. progress(0..1) wird zwischendurch aufgerufen.
+    Liefert GitHub eine Pruefsumme mit, muss die Datei genau dazu passen (sonst wird sie geloescht)."""
     if not url.startswith("https://github.com/") and not url.startswith("https://objects.githubusercontent.com/"):
         raise ValueError("unerwartete Download-Adresse")
     dest = Path(tempfile.gettempdir()) / Path(url).name
+    part = dest.with_suffix(dest.suffix + ".part")
+    h = hashlib.sha256()
     req = urllib.request.Request(url, headers={"User-Agent": f"PotatoClips/{__version__}"})
-    with urllib.request.urlopen(req, timeout=30) as r, open(dest, "wb") as f:
+    with urllib.request.urlopen(req, timeout=30) as r, open(part, "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
         done = 0
         while True:
@@ -55,9 +61,17 @@ def download(url: str, progress=None) -> Path:
             if not chunk:
                 break
             f.write(chunk)
+            h.update(chunk)
             done += len(chunk)
             if progress and total:
                 progress(done / total)
+    if total and done != total:
+        part.unlink(missing_ok=True)
+        raise IOError("Download unvollständig")
+    if sha256 and h.hexdigest().lower() != sha256.lower():
+        part.unlink(missing_ok=True)
+        raise IOError("Prüfsumme stimmt nicht – Download verworfen")
+    os.replace(part, dest)
     return dest
 
 
@@ -65,7 +79,9 @@ def can_self_update() -> bool:
     return FROZEN
 
 
-def run_installer(path: Path) -> None:
-    """Installer leise starten; er beendet Potato Clips, installiert und startet es neu."""
-    subprocess.Popen([str(path), "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS"],
-                     creationflags=0x00000008, close_fds=True, cwd=os.path.dirname(str(path)))
+def run_installer(path: Path, relaunch: bool = True) -> None:
+    """Installer leise starten; er beendet Potato Clips, installiert und startet es (falls relaunch) neu."""
+    args = [str(path), "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS"]
+    if not relaunch:
+        args.append("/NORELAUNCH=1")
+    subprocess.Popen(args, creationflags=0x00000008, close_fds=True, cwd=os.path.dirname(str(path)))

@@ -112,6 +112,33 @@ check("Ducking leiser", len(lines) >= 1, f"{len(lines)} Session(s)")
 host.command("unduck")
 time.sleep(0.8)
 check("Ducking zurueckgestellt", not os.path.exists(duckfile))
+
+
+def pyvol():
+    from soundclip.config import HELPER
+    out = subprocess.run([str(HELPER), "sessions", "python.exe"], capture_output=True, text=True,
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+    vals = [float(line.split("\t")[1]) for line in out.splitlines() if "\t" in line]
+    return min(vals) if vals else None
+
+
+# App wird beendet, waehrend sie leiser ist -> beim naechsten Start muss sie wieder normal laut sein
+host.command("duck 0.30 +python.exe")
+time.sleep(0.8)
+v_duck = pyvol()
+player.kill()
+player.wait()
+time.sleep(0.5)
+host.command("unduck")
+time.sleep(0.8)
+pending = os.path.exists(duckfile)
+player = subprocess.Popen([sys.executable, "-c", _testenv.PLAYER_PRELUDE +
+                           "import numpy as np\nsd.play(np.zeros((48000*8,2),'float32'),48000); sd.wait()"])
+time.sleep(6)
+v_after = pyvol()
+check("Beendete App wird spaeter zurueckgesetzt", v_duck is not None and abs(v_duck - 0.3) < 0.02 and pending
+      and v_after is not None and v_after > 0.99 and not os.path.exists(duckfile),
+      f"leiser {v_duck}, vorgemerkt {pending}, danach {v_after}")
 player.kill()
 mixer.close()
 host.shutdown()

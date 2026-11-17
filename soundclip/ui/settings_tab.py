@@ -312,6 +312,13 @@ class SettingsTab(QWidget):
         b = QPushButton("Neu laden")
         b.clicked.connect(self._fill_devices)
         self._row(sec, "Ich höre über", "Folgt automatisch, wenn du in Windows wechselst", [self.monitor, b])
+        self.mon_warn = QLabel("⚠ Hier steht das virtuelle Kabel – dann hörst du deine Sounds nicht selbst. "
+                               "Wähle deinen Kopfhörer oder „Windows-Standard“.")
+        self.mon_warn.setWordWrap(True)
+        self.mon_warn.setStyleSheet(f"color: {P['red']}; font-weight: 700; background: transparent;")
+        self.mon_warn.setContentsMargins(20, 0, 20, 12)
+        self.mon_warn.hide()
+        sec.addWidget(self.mon_warn)
 
         # ================= Clips & Aufnahme
         sec = self._section("clips", "Clips & Aufnahme")
@@ -593,11 +600,14 @@ class SettingsTab(QWidget):
         gh.clicked.connect(lambda: __import__("webbrowser").open("https://github.com/swulfen13/potato-clips"))
         self._row(sec, "Potato Clips", tr_text(f"Version {__version__} · Open Source (MIT) · alles bleibt auf deinem PC"),
                   [self.update_btn, gh])
-        self.upd_auto = ToggleSwitch()
-        self.upd_auto.setChecked(cfg["update_check"])
-        self.upd_auto.toggled.connect(lambda v: cfg.__setitem__("update_check", v))
-        self._row(sec, "Automatisch nach Updates schauen", "Einmal am Tag, nur eine kurze Anfrage an GitHub",
-                  self.upd_auto)
+        self.upd_mode = QComboBox()
+        for k, t in UPDATE_MODES:
+            self.upd_mode.addItem(t, k)
+        self.upd_mode.setCurrentIndex(max(0, self.upd_mode.findData(ctl.update_mode())))
+        self.upd_mode.currentIndexChanged.connect(
+            lambda _: cfg.update(update_mode=self.upd_mode.currentData(), update_check=self.upd_mode.currentData() != "off"))
+        self._row(sec, "Updates", "Schaut alle paar Stunden kurz bei GitHub nach. „Automatisch“ installiert erst, wenn "
+                  "10 Minuten lang nichts los ist (kein Call, keine Aufnahme) – sonst beim Beenden", self.upd_mode)
         wiz = QPushButton("Einrichtung starten")
         wiz.clicked.connect(self._run_wizard)
         self._row(sec, "Einrichtungs-Assistent", "VB-Cable, Discord und Mikro Schritt für Schritt", wiz)
@@ -1129,8 +1139,9 @@ class SettingsTab(QWidget):
         if not self.isVisible():
             return
         ctl = self.ctl
-        self._ticks = getattr(self, "_ticks", 0) + 1
-        if self._ticks % 20 == 0:          # alle 3 s: neue/beendete Apps in Auto-Clip und Sprachbefehlen
+        self._live_ticks = getattr(self, "_live_ticks", 0) + 1
+        self.mon_warn.setVisible("CABLE" in str(self.monitor.currentData() or "").upper())
+        if self._live_ticks % 20 == 0:          # alle 3 s: neue/beendete Apps in Auto-Clip und Sprachbefehlen
             self._ac_label()
             if self._dl is None:
                 self._trigger_info()
@@ -1171,6 +1182,10 @@ class SettingsTab(QWidget):
             self.tr_heard.setText(txt)
 
     def _sync(self):
+        if self.auto.isChecked() != autostart.is_enabled():
+            self.auto.blockSignals(True)
+            self.auto.setChecked(autostart.is_enabled())
+            self.auto.blockSignals(False)
         for w, key in ((self.rm_sw, "remote_enabled"), (self.api_sw, "api_enabled"),
                        (self.ac_sw, "autoclip_enabled"), (self.tr_sw, "triggers_enabled"),
                        (self.vc_sw, "voice_commands"),
@@ -1180,6 +1195,11 @@ class SettingsTab(QWidget):
                 w.setChecked(bool(self.ctl.cfg[key]))
                 w.blockSignals(False)
         self._remote_ui()
+        i = self.upd_mode.findData(self.ctl.update_mode())
+        if i >= 0 and i != self.upd_mode.currentIndex():
+            self.upd_mode.blockSignals(True)
+            self.upd_mode.setCurrentIndex(i)
+            self.upd_mode.blockSignals(False)
         b = self.len_btns.get(int(self.ctl.cfg["buffer_seconds"]))
         if b is not None and not b.isChecked():
             b.setChecked(True)
@@ -1196,6 +1216,9 @@ class SettingsTab(QWidget):
         self.pass_cb.blockSignals(True)
         self.pass_cb.setChecked(self.ctl.cfg["mic_passthrough"])
         self.pass_cb.blockSignals(False)
+
+
+UPDATE_MODES = (("auto", "Automatisch installieren"), ("ask", "Immer fragen"), ("off", "Aus"))
 
 
 class QrView(QWidget):

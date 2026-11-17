@@ -33,6 +33,7 @@
 #include <deque>
 #include <condition_variable>
 #include <chrono>
+#include <thread>
 #include <math.h>
 
 #pragma comment(lib, "ole32.lib")
@@ -1130,10 +1131,14 @@ static DWORD WINAPI streamThread(LPVOID p) {
 }
 
 // ---------------------------------------------------------------- Ducking: andere Apps leiser, solange ein Sound laeuft
-// Merkt sich die Original-Lautstaerke jeder App-Session und stellt sie danach wieder her (auch nach einem Absturz:
-// die Werte stehen in %TEMP%\potato_clips_duck.txt und werden beim naechsten Start zurueckgesetzt).
+// Merkt sich die Original-Lautstaerke jeder App (stabile Session-Kennung = App + Geraet, gilt auch ueber
+// Neustarts der App hinweg) und stellt sie danach wieder her. Wurde eine App beendet, waehrend sie leiser war,
+// wartet der Eintrag, bis die App wieder Ton macht, und setzt sie dann zurueck - sonst wuerde Windows sich die
+// leise Lautstaerke fuer diese App dauerhaft merken. Die Werte stehen auch in %TEMP%\potato_clips_duck.txt
+// (Absturz/Neustart des PCs).
 static std::mutex g_duckLock;
 static std::map<std::wstring, float> g_ducked;
+static bool g_duckActive = false;
 
 static std::wstring duckFile() {
     wchar_t t[MAX_PATH];
@@ -1185,7 +1190,7 @@ static void forEachSession(F fn) {
                             c2->GetProcessId(&pid);
                             LPWSTR sid = nullptr;
                             bool sys = c2->IsSystemSoundsSession() == S_OK;
-                            if (!sys && pid && SUCCEEDED(c2->GetSessionInstanceIdentifier(&sid)) && sid) {
+                            if (!sys && pid && SUCCEEDED(c2->GetSessionIdentifier(&sid)) && sid) {
                                 ISimpleAudioVolume* v = nullptr;
                                 if (SUCCEEDED(c->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&v))) {
                                     fn(std::wstring(sid), v, pid);
@@ -1219,6 +1224,7 @@ static void saveDuckFile() {
 
 static void duckApply(float factor, const std::string& skipCsv) {
     std::lock_guard<std::mutex> lk(g_duckLock);
+    g_duckActive = true;
     DWORD me = GetCurrentProcessId();
     bool only = !skipCsv.empty() && skipCsv[0] == '+';          // "+a.exe,b.exe" = nur diese (fuer Tests)
     std::string skip = "," + (only ? skipCsv.substr(1) : skipCsv) + ",";
@@ -1241,15 +1247,37 @@ static void duckApply(float factor, const std::string& skipCsv) {
     saveDuckFile();
 }
 
-static void duckRestore() {
-    std::lock_guard<std::mutex> lk(g_duckLock);
+// Lautstaerken zuruecksetzen. Apps, die gerade nicht laufen, bleiben vorgemerkt (siehe duckWatch).
+static void duckRestoreLocked() {
     if (g_ducked.empty()) return;
+    std::set<std::wstring> done;
     forEachSession([&](const std::wstring& sid, ISimpleAudioVolume* v, DWORD) {
         auto it = g_ducked.find(sid);
-        if (it != g_ducked.end()) v->SetMasterVolume(it->second, nullptr);
+        if (it != g_ducked.end()) {
+            v->SetMasterVolume(it->second, nullptr);
+            done.insert(sid);
+        }
     });
-    g_ducked.clear();
-    saveDuckFile();
+    size_t before = g_ducked.size();
+    for (auto& d : done) g_ducked.erase(d);
+    if (!done.empty() || before != g_ducked.size() || g_ducked.empty()) saveDuckFile();
+}
+
+static void duckRestore() {
+    std::lock_guard<std::mutex> lk(g_duckLock);
+    g_duckActive = false;
+    duckRestoreLocked();
+}
+
+// Alle 3 s: vorgemerkte Apps, die inzwischen wieder laufen, auf ihre alte Lautstaerke setzen
+static void duckWatch() {
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    while (!g_quit) {
+        for (int i = 0; i < 30 && !g_quit; i++) Sleep(100);
+        std::lock_guard<std::mutex> lk(g_duckLock);
+        if (!g_duckActive && !g_ducked.empty()) duckRestoreLocked();
+    }
+    CoUninitialize();
 }
 
 static void duckRecoverFromFile() {
@@ -1265,7 +1293,10 @@ static void duckRecoverFromFile() {
             *tab = 0;
             std::wstring id(tab + 1);
             while (!id.empty() && (id.back() == L'\n' || id.back() == L'\r')) id.pop_back();
-            g_ducked[id] = (float)_wtof(line);
+            // aeltere Versionen speicherten die Kennung der laufenden Instanz ("...|1%b<pid>") - auf App kuerzen
+            size_t bar = id.rfind(L"|1%b");
+            if (bar != std::wstring::npos && std::count(id.begin(), id.end(), L'|') >= 2) id = id.substr(0, bar);
+            if (!g_ducked.count(id)) g_ducked[id] = (float)_wtof(line);
         }
     }
     fclose(fp);
@@ -1277,6 +1308,8 @@ static int cmdServer() {
     HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
     sendFrame(2, 0, "audiocap: server ok", 19);
     duckRecoverFromFile();
+    std::thread duckWatcher(duckWatch);
+    duckWatcher.detach();
     std::vector<BYTE> buf;
     while (!g_quit) {
         BYTE hdr[7];
@@ -1406,6 +1439,22 @@ static int cmdSetVolume(const char* idArg, const char* volArg) {
     return 0;
 }
 
+// Diagnose: alle App-Lautstaerken anzeigen bzw. eine App auf eine Lautstaerke setzen
+static int cmdSessions(const char* exeArg, const char* volArg) {
+    std::string want = exeArg ? exeArg : "";
+    for (auto& c : want) c = (char)tolower((unsigned char)c);
+    float nv = volArg ? (float)atof(volArg) : -1.f;
+    forEachSession([&](const std::wstring& sid, ISimpleAudioVolume* v, DWORD pid) {
+        std::string exe = exeOf(pid);
+        if (!want.empty() && exe != want) return;
+        if (nv >= 0.f && nv <= 1.f) v->SetMasterVolume(nv, nullptr);
+        float cur = 0.f;
+        v->GetMasterVolume(&cur);
+        printf("%s\t%.3f\t%lu\n", exe.c_str(), cur, (unsigned long)pid);
+    });
+    return 0;
+}
+
 int main(int argc, char** argv) {
     timeBeginPeriod(1);   // Windows-Timer auf 1 ms (Standard 15,6 ms -> Audio kaeme sonst in Schueben)
     _setmode(_fileno(stdout), _O_BINARY);
@@ -1416,6 +1465,8 @@ int main(int argc, char** argv) {
     else if (argc >= 2 && strcmp(argv[1], "server") == 0) rc = cmdServer();
     else if (argc >= 3 && strcmp(argv[1], "play") == 0) rc = cmdPlay(argv[2]);
     else if (argc >= 4 && strcmp(argv[1], "setvolume") == 0) rc = cmdSetVolume(argv[2], argv[3]);
+    else if (argc >= 2 && strcmp(argv[1], "sessions") == 0)
+        rc = cmdSessions(argc >= 3 ? argv[2] : nullptr, argc >= 4 ? argv[3] : nullptr);
     else if (argc >= 3 && (strcmp(argv[1], "process") == 0 || strcmp(argv[1], "loopback") == 0 ||
                            strcmp(argv[1], "mic") == 0)) rc = cmdCapture(argv[1], argv[2]);
     else fprintf(stderr, "usage: audiocap list | server | play <id|default> | process <pid> | loopback <id|default> | mic <id|default>\n");

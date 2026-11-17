@@ -42,7 +42,9 @@ class Controller(QObject):
     settingsChanged = Signal()
     voiceChanged = Signal()
     shareReady = Signal(str)            # Datei fuer die Zwischenablage (aus Hintergrund-Thread)
-    updateFound = Signal(dict)          # neue Version auf GitHub
+    updateFound = Signal(dict)          # neue Version auf GitHub (Modus "fragen" oder manuelle Pruefung)
+    updateReady = Signal(str)           # Modus "automatisch": Update geladen, wartet auf ruhigen Moment
+    installUpdate = Signal(str)         # jetzt installieren (Pfad zum Installer)
     remoteCommand = Signal(str)         # Befehl vom Handy / Stream Deck (aus dem Server-Thread)
     triggerFired = Signal(str)          # Sprach-Trigger hat einen Sound erkannt
     autoClipFire = Signal()             # Auto-Clip: jetzt clippen
@@ -74,7 +76,7 @@ class Controller(QObject):
         self.announcer = Announcer(self)
         self.triggers = VoiceTriggers(self.cfg, self.sounds, self.triggerFired.emit,
                                       command=self.voiceCommand.emit, apps=self.app_labels)
-        self.sources.listeners = [self.autoclip.on_chunk, self.triggers.on_chunk]
+        self.sources.listeners = [self.autoclip.on_chunk, self.triggers.on_chunk, self._activity]
         self.remote = RemoteServer(self)
         self.remoteCommand.connect(self.run_command)
         self.triggerFired.connect(self.play_sound)
@@ -85,6 +87,9 @@ class Controller(QObject):
                                                                     preview=False))
         self._rec_since = 0.0
         self._tts_voices: list | None = None
+        self.pending_update: str = ""      # fertig geladener Installer (Modus automatisch)
+        self._update_busy = False
+        self._last_busy = 0.0
 
     def start(self):
         try:
@@ -99,6 +104,14 @@ class Controller(QObject):
         self._duck_timer.timeout.connect(self._duck_tick)
         self._duck_timer.start(80)
         self.check_updates(auto=True)
+        from PySide6.QtCore import QTimer
+        self._upd_timer = QTimer(self)          # auch waehrend die App laeuft regelmaessig nachschauen
+        self._upd_timer.timeout.connect(lambda: self.check_updates(auto=True))
+        self._upd_timer.start(30 * 60 * 1000)
+        self._idle_timer = QTimer(self)         # geladenes Update in einem ruhigen Moment installieren
+        self._idle_timer.timeout.connect(self._idle_install)
+        self._idle_timer.start(20 * 1000)
+        self._resume_pending_update()
         try:
             self.remote.sync()
         except Exception:
@@ -503,11 +516,21 @@ class Controller(QObject):
                 HelperHost.get().command("unduck")
                 self._ducked = False
 
+    UPDATE_EVERY = 6 * 3600            # automatisch hoechstens alle 6 Stunden nachschauen
+
+    def update_mode(self) -> str:
+        m = self.cfg.get("update_mode")
+        if m in ("auto", "ask", "off"):
+            return m
+        return "ask" if self.cfg["update_check"] else "off"
+
     def check_updates(self, auto: bool = False):
-        """Im Hintergrund auf GitHub nach einer neuen Version schauen (automatisch hoechstens 1x am Tag)."""
-        import time as _t
-        if auto and (not self.cfg["update_check"] or _t.time() - float(self.cfg["last_update_check"] or 0) < 86400):
+        """Im Hintergrund auf GitHub nach einer neuen Version schauen."""
+        mode = self.update_mode()
+        if auto and (mode == "off" or self._update_busy or self.pending_update
+                     or time.time() - float(self.cfg["last_update_check"] or 0) < self.UPDATE_EVERY):
             return
+        self._update_busy = True
 
         def work():
             from . import updater
@@ -517,14 +540,81 @@ class Controller(QObject):
                 log.info("Update-Pruefung: %s", e)
                 if not auto:
                     self.toast.emit("Update-Prüfung fehlgeschlagen (offline?)", "warn")
+                self._update_busy = False
                 return
-            self.cfg["last_update_check"] = _t.time()
-            if info:
-                self.updateFound.emit(info)
-            elif not auto:
-                self.toast.emit("Du hast die neueste Version", "ok")
+            self.cfg["last_update_check"] = time.time()
+            if not info:
+                self._update_busy = False
+                if not auto:
+                    self.toast.emit("Du hast die neueste Version", "ok")
+                return
+            if auto and mode == "auto" and info.get("url") and updater.can_self_update():
+                try:
+                    path = updater.download(info["url"], sha256=info.get("sha256", ""))
+                except Exception as e:
+                    log.warning("Update-Download: %s", e)
+                    self._update_busy = False
+                    return
+                self.pending_update = str(path)
+                self.cfg["pending_update"] = str(path)
+                self._last_busy = time.time()
+                self._update_busy = False
+                log.info("Update %s geladen, wird in einem ruhigen Moment installiert", info["version"])
+                self.updateReady.emit(info["version"])
+                return
+            self._update_busy = False
+            dec = self.cfg["update_declined"] or {}
+            if auto and dec.get("version") == info["version"] and time.time() - float(dec.get("at", 0)) < 3 * 86400:
+                return
+            self.updateFound.emit(info)
 
         threading.Thread(target=work, daemon=True).start()
+
+    def decline_update(self, version: str):
+        self.cfg["update_declined"] = {"version": version, "at": time.time()}
+
+    def _activity(self, key: str, data):
+        """Mikro oder Discord aktiv (jemand redet)? Dann kein automatisches Update - sonst bricht der Call kurz ab."""
+        if key == "mic" or "discord" in key:
+            try:
+                if len(data) and float(abs(data).max()) > 0.03:
+                    self._last_busy = time.time()
+            except Exception:
+                pass
+
+    def _idle_install(self):
+        """Modus automatisch: erst installieren, wenn 10 Minuten lang nichts los war."""
+        if not self.pending_update:
+            return
+        busy = bool(self.sources.recording) or bool(self.cfg["voice_enabled"]) or bool(self.mixer.playing())
+        now = time.time()
+        if busy:
+            self._last_busy = now
+            return
+        if now - self._last_busy >= 600:
+            path, self.pending_update = self.pending_update, ""
+            self.cfg["pending_update"] = ""
+            self.installUpdate.emit(path)
+
+    def _resume_pending_update(self):
+        """Beim letzten Mal schon geladen, aber nicht installiert? Dann jetzt beim Start installieren."""
+        import os
+        from pathlib import Path
+        from . import __version__, updater
+        p = str(self.cfg["pending_update"] or "")
+        self.cfg["pending_update"] = ""
+        if not p or not os.path.exists(p) or not updater.can_self_update():
+            return
+        if updater._ver(Path(p).name) <= updater._ver(__version__) or self.update_mode() != "auto":
+            return
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(8000, lambda: self.installUpdate.emit(p))
+
+    def take_pending_update(self) -> str:
+        """Beim Beenden: geladenes Update mitnehmen (wird dann ohne Neustart installiert)."""
+        p, self.pending_update = self.pending_update, ""
+        self.cfg["pending_update"] = ""
+        return p
 
     def voice_amount(self, preset: str | None = None) -> float:
         pre = preset or self.cfg["voice_preset"]

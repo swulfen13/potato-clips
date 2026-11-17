@@ -69,7 +69,7 @@ Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "--mi
 Filename: "https://vb-audio.com/Cable/"; Description: "{cm:GetCable}"; Flags: shellexec postinstall skipifsilent nowait unchecked; Check: not CableInstalled
 Filename: "{app}\{#AppExe}"; Description: "{cm:StartNow}"; Flags: nowait postinstall skipifsilent
 ; nach einem automatischen Update (leise Installation) direkt wieder starten
-Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent
+Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent and ShouldRelaunch
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/f /im {#AppExe}"; Flags: runhidden; RunOnceId: "KillApp"
@@ -79,6 +79,12 @@ Filename: "{sys}\taskkill.exe"; Parameters: "/f /im audiocap.exe"; Flags: runhid
 Type: files; Name: "{userstartup}\{#AppName}.lnk"
 
 [Code]
+function ShouldRelaunch: Boolean;
+begin
+  { /NORELAUNCH=1: Update beim Beenden - danach nicht wieder starten }
+  Result := ExpandConstant('{param:norelaunch|0}') = '0';
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Dir, Cfg, Lang: String;
