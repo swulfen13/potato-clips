@@ -40,7 +40,7 @@ a = Analysis(
     ] + extra_bins,
     datas=[(os.path.join(ROOT, "assets"), "assets"),
            (os.path.join(ROOT, "soundclip", "ui", "assets"), os.path.join("soundclip", "ui", "assets"))],
-    hiddenimports=["soundclip.fxworker", "vosk", "vosk.vosk_cffi", "_cffi_backend", "qrcode", "imageio_ffmpeg"],
+    hiddenimports=["soundclip.fxworker", "comtypes", "comtypes.client", "vosk", "vosk.vosk_cffi", "_cffi_backend", "qrcode", "imageio_ffmpeg"],
     excludes=["tkinter", "matplotlib", "IPython", "pytest", "sounddevice", "pyrnnoise",
               "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
               "PySide6.QtQuick", "PySide6.QtQml", "PySide6.QtPdf", "PySide6.Qt3DCore", "PySide6.QtCharts",

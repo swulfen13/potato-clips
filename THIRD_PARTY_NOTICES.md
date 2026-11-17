@@ -13,6 +13,7 @@ diese Bibliotheken, jeweils unter ihrer eigenen Lizenz:
 | libsndfile | LGPL-2.1 | https://libsndfile.github.io/libsndfile/ |
 | keyboard | MIT | https://github.com/boppreh/keyboard |
 | psutil | BSD-3-Clause | https://github.com/giampaolo/psutil |
+| comtypes (Windows-Sprachausgabe) | MIT | https://github.com/enthought/comtypes |
 | RNNoise (KI-Rauschfilter, `rnnoise.dll` aus dem Paket pyrnnoise) | BSD-3-Clause | https://github.com/xiph/rnnoise, https://github.com/pengzhendong/pyrnnoise |
 | Schriftarten Inter, Bungee, Comic Neue (`assets/fonts`) | SIL Open Font License 1.1 | https://rsms.me/inter, https://github.com/djrpnt/bungee, https://comicneue.com |
 | Vosk (Spracherkennung, `libvosk.dll`) | Apache-2.0 | https://github.com/alphacep/vosk-api |

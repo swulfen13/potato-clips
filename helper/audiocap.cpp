@@ -1137,8 +1137,12 @@ static DWORD WINAPI streamThread(LPVOID p) {
 // leise Lautstaerke fuer diese App dauerhaft merken. Die Werte stehen auch in %TEMP%\potato_clips_duck.txt
 // (Absturz/Neustart des PCs).
 static std::mutex g_duckLock;
-static std::map<std::wstring, float> g_ducked;
+static std::map<std::wstring, float> g_ducked;      // Session -> Original-Lautstaerke (solange wir sie veraendern)
 static bool g_duckActive = false;
+static float g_duckFac = 1.f;
+static std::string g_duckSkip;                       // ",a.exe,b.exe," ; mit g_duckOnly = nur diese
+static bool g_duckOnly = false;
+static std::map<std::string, float> g_guard;         // Ohrenschutz: exe -> Faktor (< 1 = gerade leiser)
 
 static std::wstring duckFile() {
     wchar_t t[MAX_PATH];
@@ -1222,51 +1226,67 @@ static void saveDuckFile() {
     fclose(fp);
 }
 
-static void duckApply(float factor, const std::string& skipCsv) {
-    std::lock_guard<std::mutex> lk(g_duckLock);
-    g_duckActive = true;
+// Wunsch-Lautstaerke jeder App = Original x Ducking x Ohrenschutz. Apps, die gerade nicht laufen, bleiben
+// vorgemerkt und werden zurueckgesetzt, sobald sie wieder Ton machen (siehe duckWatch).
+static void volApplyLocked() {
     DWORD me = GetCurrentProcessId();
-    bool only = !skipCsv.empty() && skipCsv[0] == '+';          // "+a.exe,b.exe" = nur diese (fuer Tests)
-    std::string skip = "," + (only ? skipCsv.substr(1) : skipCsv) + ",";
+    std::set<std::wstring> done;
     forEachSession([&](const std::wstring& sid, ISimpleAudioVolume* v, DWORD pid) {
         if (pid == me) return;
         std::string exe = exeOf(pid);
         if (exe.empty()) return;
-        bool listed = skip.find("," + exe + ",") != std::string::npos;
-        if (only ? !listed : listed) return;
-        auto it = g_ducked.find(sid);
-        float orig;
-        if (it == g_ducked.end()) {
-            if (FAILED(v->GetMasterVolume(&orig))) return;
-            g_ducked[sid] = orig;
-        } else {
-            orig = it->second;
+        float f = 1.f;
+        if (g_duckActive) {
+            bool listed = g_duckSkip.find("," + exe + ",") != std::string::npos;
+            if (g_duckOnly ? listed : !listed) f *= g_duckFac;
         }
-        v->SetMasterVolume(orig * factor, nullptr);
-    });
-    saveDuckFile();
-}
-
-// Lautstaerken zuruecksetzen. Apps, die gerade nicht laufen, bleiben vorgemerkt (siehe duckWatch).
-static void duckRestoreLocked() {
-    if (g_ducked.empty()) return;
-    std::set<std::wstring> done;
-    forEachSession([&](const std::wstring& sid, ISimpleAudioVolume* v, DWORD) {
+        auto g = g_guard.find(exe);
+        if (g != g_guard.end()) f *= g->second;
         auto it = g_ducked.find(sid);
-        if (it != g_ducked.end()) {
+        if (f < 0.999f) {
+            float orig;
+            if (it == g_ducked.end()) {
+                if (FAILED(v->GetMasterVolume(&orig))) return;
+                g_ducked[sid] = orig;
+            } else {
+                orig = it->second;
+            }
+            v->SetMasterVolume(orig * f, nullptr);
+        } else if (it != g_ducked.end()) {
             v->SetMasterVolume(it->second, nullptr);
             done.insert(sid);
         }
     });
-    size_t before = g_ducked.size();
     for (auto& d : done) g_ducked.erase(d);
-    if (!done.empty() || before != g_ducked.size() || g_ducked.empty()) saveDuckFile();
+    saveDuckFile();
+}
+
+static void duckApply(float factor, const std::string& skipCsv) {
+    std::lock_guard<std::mutex> lk(g_duckLock);
+    g_duckActive = true;
+    g_duckFac = factor;
+    g_duckOnly = !skipCsv.empty() && skipCsv[0] == '+';          // "+a.exe,b.exe" = nur diese (fuer Tests)
+    g_duckSkip = "," + (g_duckOnly ? skipCsv.substr(1) : skipCsv) + ",";
+    volApplyLocked();
 }
 
 static void duckRestore() {
     std::lock_guard<std::mutex> lk(g_duckLock);
     g_duckActive = false;
-    duckRestoreLocked();
+    volApplyLocked();
+}
+
+static void guardSet(const std::string& exe, float factor) {
+    std::lock_guard<std::mutex> lk(g_duckLock);
+    if (factor >= 0.999f) g_guard.erase(exe);
+    else g_guard[exe] = factor < 0.05f ? 0.05f : factor;
+    volApplyLocked();
+}
+
+static void guardClear() {
+    std::lock_guard<std::mutex> lk(g_duckLock);
+    g_guard.clear();
+    volApplyLocked();
 }
 
 // Alle 3 s: vorgemerkte Apps, die inzwischen wieder laufen, auf ihre alte Lautstaerke setzen
@@ -1275,7 +1295,7 @@ static void duckWatch() {
     while (!g_quit) {
         for (int i = 0; i < 30 && !g_quit; i++) Sleep(100);
         std::lock_guard<std::mutex> lk(g_duckLock);
-        if (!g_duckActive && !g_ducked.empty()) duckRestoreLocked();
+        if (!g_ducked.empty()) volApplyLocked();
     }
     CoUninitialize();
 }
@@ -1371,6 +1391,17 @@ static int cmdServer() {
                 duckApply(fac, skip);
             } else if (cmd == "unduck") {
                 duckRestore();
+            } else if (cmd.rfind("guard ", 0) == 0) {
+                char exe[512] = {0};
+                float fac = 1.f;
+                if (sscanf_s(cmd.c_str() + 6, "%511s %f", exe, (unsigned)sizeof(exe), &fac) == 2) {
+                    std::string e(exe);
+                    for (auto& c : e) c = (char)tolower((unsigned char)c);
+                    if (fac < 0.f) fac = 0.f;
+                    guardSet(e, fac);
+                }
+            } else if (cmd == "unguard") {
+                guardClear();
             } else if (cmd == "montarget") {
                 g_voice.monTarget = (int)id;
             } else if (cmd.rfind("fxstart ", 0) == 0) {
@@ -1411,6 +1442,10 @@ static int cmdServer() {
     {
         std::lock_guard<std::mutex> lk(g_streamsLock);
         for (auto& kv : g_streams) kv.second->stop = true;
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_duckLock);
+        g_guard.clear();
     }
     duckRestore();
     Sleep(300);

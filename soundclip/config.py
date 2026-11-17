@@ -113,13 +113,15 @@ DEFAULTS: dict = {
     "announce_recording": True,       # auch bei Aufnahme Start/Ende
     # Video
     "video_format": "9:16",
+    "video_post": False,              # Video danach in Discord posten
     "video_subs": True,               # Untertitel im Video (wenn das Sprachpaket da ist)
     "clip_transcribe": False,
+    "discord_webhook": "",            # Clips direkt in einen Discord-Kanal posten
     "voice_chat_apps": ["discord.exe", "discordptb.exe", "discordcanary.exe"],   # Apps, in denen Freunde reden
     "profiles": [],                   # Profile pro Spiel (siehe profiles.py)
     "profile_auto": True,             # Profil automatisch nach laufendem Spiel waehlen
     "profile_manual": "",             # fest gewaehltes Profil (id), "" = automatisch
-    "ear_guard": False,               # Ohrenschutz: zu laute Apps/Sounds sofort leiser
+    "ear_guard": True,                # Ohrenschutz: zu laute Apps/Sounds sofort leiser
     "ear_guard_level": "normal",      # soft / normal / strict         # neue Clips automatisch in Text umwandeln (Suche)
     # Oberflaeche
     "overlay_enabled": True,

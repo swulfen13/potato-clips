@@ -178,6 +178,8 @@ class MainWindow(QMainWindow):
         a_quit.triggered.connect(self._quit_from_tray)
         for a in (a_open, a_clip, self.a_rec, a_stop, a_ov):
             menu.addAction(a)
+        self.prof_menu = menu.addMenu("🎮  Profil")
+        self.prof_menu.aboutToShow.connect(self._fill_prof_menu)
         menu.addSeparator()
         menu.addAction(a_quit)
         self.tray.setContextMenu(menu)
@@ -332,6 +334,28 @@ class MainWindow(QMainWindow):
         self.btn_rec.style().polish(self.btn_rec)
         self.a_rec.setText("■  Aufnahme stoppen" if on else "●  Aufnahme starten")
 
+    def _fill_prof_menu(self):
+        from ..i18n import tr
+        m = self.prof_menu
+        m.clear()
+        man = self.ctl.cfg["profile_manual"]
+        cur = (self.ctl.profile or {}).get("id", "")
+        a = m.addAction(tr("Automatisch"))
+        a.setCheckable(True)
+        a.setChecked(not man)
+        a.triggered.connect(lambda: self.ctl.choose_profile(""))
+        profs = self.ctl.profiles()
+        if profs:
+            m.addSeparator()
+        for p in profs:
+            a = m.addAction(p["name"])
+            a.setCheckable(True)
+            a.setChecked(bool(man) and p["id"] == cur)
+            a.triggered.connect(lambda _=False, pid=p["id"]: self.ctl.choose_profile(pid))
+        if not profs:
+            x = m.addAction(tr("Noch keine Profile – Einstellungen → Profile pro Spiel"))
+            x.setEnabled(False)
+
     def _tick(self):
         src = self.ctl.sources
         if not src.helper_ok:
@@ -344,6 +368,8 @@ class MainWindow(QMainWindow):
         hk = self.ctl.hotkey_text("clip")
         if hk:
             lines.append(tr(f"Clip-Hotkey: {hk}"))
+        if self.ctl.profile:
+            lines.append("🎮 " + self.ctl.profile["name"])
         if self.ctl.cfg["voice_enabled"]:
             from ..effects import voice_name
             lines.append(f"<span style='color:{P['accent']}'>" + tr(voice_name(self.ctl.cfg['voice_preset'])) + "</span>")

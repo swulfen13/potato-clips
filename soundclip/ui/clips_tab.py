@@ -187,6 +187,9 @@ class ClipsTab(QWidget):
         self.b_share = QPushButton("📋 Für Discord kopieren")
         self.b_share.setToolTip("Als MP3 in die Zwischenablage – in Discord mit Strg+V einfügen")
         self.b_share.clicked.connect(self._share)
+        self.b_post = QPushButton("📤 In Discord posten")
+        self.b_post.setToolTip("Clip direkt in deinen Discord-Kanal schicken (Webhook in den Einstellungen)")
+        self.b_post.clicked.connect(self._post)
         self.b_video = QPushButton("🎬 Als Video")
         self.b_video.setToolTip("MP4 mit animierter Wellenform – für TikTok, Shorts, Reels oder Discord")
         self.b_video.clicked.connect(self._video)
@@ -196,6 +199,7 @@ class ClipsTab(QWidget):
         rl.addLayout(act)
         act2 = QHBoxLayout()
         act2.addWidget(self.b_share)
+        act2.addWidget(self.b_post)
         act2.addWidget(self.b_video)
         act2.addWidget(self.b_export)
         act2.addStretch(1)
@@ -206,7 +210,7 @@ class ClipsTab(QWidget):
         split.setSizes([300, 800])
 
         self.editor_widgets = [self.name, self.wave, self.fx_combo, b_add, self.b_prev, self.b_play,
-                               self.b_stop, self.b_sound, self.b_export, self.b_share, self.b_video, self.b_tx, b_reset, b_last5, b_last10, b_auto]
+                               self.b_stop, self.b_sound, self.b_export, self.b_share, self.b_post, self.b_video, self.b_tx, b_reset, b_last5, b_last10, b_auto]
         self._enable(False)
         ctl.clipsChanged.connect(self._on_new_clip)
         self.reload()
@@ -653,6 +657,35 @@ class ClipsTab(QWidget):
             return
         self.ctl._copy_share(str(path))
 
+    def _post(self):
+        from .. import webhook
+        if not webhook.valid(self.ctl.cfg["discord_webhook"]):
+            QMessageBox.information(self, "In Discord posten",
+                                    "Trag zuerst einen Discord-Webhook ein:\n"
+                                    "Einstellungen → Discord & Freunde → „Discord-Webhook“.")
+            return
+        data = self._rendered()
+        if data is None or not len(data):
+            self.ctl.toast.emit("Nichts zu hören – ist mindestens eine Quelle aktiv?", "warn")
+            return
+        from ..share import encode
+        try:
+            path = encode(data, self.meta["name"])
+        except Exception as e:
+            QMessageBox.warning(self, "Fehler", str(e))
+            return
+        self.b_post.setEnabled(False)
+        self._post_done = False
+        self.ctl.post_to_discord(str(path), "🥔 " + self.meta["name"],
+                                 done=lambda ok: setattr(self, "_post_done", True))
+        QTimer.singleShot(1500, self._post_poll)
+
+    def _post_poll(self):
+        if getattr(self, "_post_done", True):
+            self.b_post.setEnabled(bool(self.meta))
+        else:
+            QTimer.singleShot(500, self._post_poll)
+
     def _video(self):
         data = self._rendered()
         if data is None or not len(data):
@@ -662,6 +695,7 @@ class ClipsTab(QWidget):
         if not dlg.exec():
             return
         fmt, title, style = dlg.values()
+        self._post_video = dlg.post.isChecked()
         if dlg.subs.isChecked():
             from ..transcribe import edit_sig
             t = self.meta.get("transcript") or {}
@@ -715,7 +749,10 @@ class ClipsTab(QWidget):
             if too_big(out):
                 msg = "🎬 Video fertig (größer als 10 MB – für Discord evtl. zu groß)"
             self.ctl.toast.emit(msg, "ok")
-            subprocess.Popen(["explorer", "/select,", out.replace("/", "\\")])
+            if getattr(self, "_post_video", False) and not too_big(out):
+                self.ctl.post_to_discord(out, "🥔 " + title)
+            else:
+                subprocess.Popen(["explorer", "/select,", out.replace("/", "\\")])
         timer = QTimer(self)
         timer.timeout.connect(poll)
         timer.start(100)
@@ -773,6 +810,15 @@ class VideoDialog(QDialog):
         if not ready:
             self.subs.setToolTip("Braucht das Sprachpaket: Einstellungen → Sprach-Trigger")
         lay.addRow("", self.subs)
+        from .. import webhook
+        self.post = QCheckBox("Danach direkt in Discord posten")
+        hook = webhook.valid(ctl.cfg["discord_webhook"])
+        self.post.setEnabled(hook)
+        self.post.setChecked(hook and bool(ctl.cfg.get("video_post", False)))
+        self.post.toggled.connect(lambda v: ctl.cfg.__setitem__("video_post", v))
+        if not hook:
+            self.post.setToolTip("Dafür in den Einstellungen einen Discord-Webhook eintragen")
+        lay.addRow("", self.post)
         if seconds > 180:
             warn = QLabel("Der Clip ist recht lang – kürze ihn vorher, dann geht es schneller.")
             warn.setObjectName("muted")

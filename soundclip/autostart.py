@@ -26,11 +26,31 @@ def _pythonw() -> Path:
     return w if w.exists() else exe
 
 
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+RUN_NAME = "Potato Clips"
+
+
+def _command() -> str:
+    if FROZEN:
+        return f'"{_pythonw()}" --minimized'
+    return f'"{_pythonw()}" "{APP_DIR / "app.py"}" --minimized'
+
+
+def _run_value() -> str | None:
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+            return str(winreg.QueryValueEx(k, RUN_NAME)[0])
+    except OSError:
+        return None
+
+
 def is_enabled() -> bool:
-    return LINK.exists()
+    return LINK.exists() or _run_value() is not None
 
 
 def _make_shortcut(link: Path, args: str) -> None:
+    """Nur noch fuer die Entwickler-Version (Startmenue-Eintrag); die App selbst startet kein PowerShell mehr."""
     env = dict(os.environ)
     env.update(SC_LNK=str(link), SC_TARGET=str(_pythonw()), SC_ARGS=args, SC_DIR=str(APP_DIR),
                SC_ICON=(str(sys.executable) if FROZEN else str(ICON)) if (FROZEN or ICON.exists()) else "")
@@ -43,14 +63,26 @@ def _make_shortcut(link: Path, args: str) -> None:
 
 
 def enable() -> None:
-    STARTUP_DIR.mkdir(parents=True, exist_ok=True)
-    _make_shortcut(LINK, "--minimized" if FROZEN else f'"{APP_DIR / "app.py"}" --minimized')
-
-
-def disable() -> None:
+    """Autostart ueber den normalen Windows-Eintrag (wie Discord/Spotify) - kein PowerShell, keine Verknuepfung."""
+    import winreg
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+        winreg.SetValueEx(k, RUN_NAME, 0, winreg.REG_SZ, _command())
     try:
         LINK.unlink()
     except FileNotFoundError:
+        pass
+
+
+def disable() -> None:
+    import winreg
+    try:
+        LINK.unlink()
+    except FileNotFoundError:
+        pass
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+            winreg.DeleteValue(k, RUN_NAME)
+    except OSError:
         pass
 
 
@@ -65,8 +97,12 @@ def migrate_old_name() -> None:
         except Exception:
             pass
     try:
-        if had_autostart and not LINK.exists():
+        if had_autostart:
             enable()
+        elif LINK.exists():                 # alte Autostart-Verknuepfung -> normaler Windows-Eintrag
+            enable()
+        elif _run_value() not in (None, _command()):
+            enable()                        # Programm wurde verschoben -> Pfad aktualisieren
     except Exception:
         pass
 

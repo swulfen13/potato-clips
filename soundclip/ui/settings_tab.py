@@ -20,6 +20,11 @@ from .theme import P
 from .widgets import GREEN, RED, HotkeyEdit, LevelMeter, ToggleSwitch, hard_shadow
 
 
+def _html(t: str) -> str:
+    import html
+    return html.escape(str(t))
+
+
 def _theme_preview(key: str) -> QPixmap:
     """Kleines Vorschaubild fuer die Design-Auswahl."""
     pm = QPixmap(240, 132)
@@ -78,7 +83,8 @@ def intruder_text(ctl) -> str:
 class SettingsTab(QWidget):
     CATEGORIES = [("allgemein", "Allgemein"), ("discord", "Discord & Freunde"), ("mikrofon", "Mikrofon"),
                   ("geraete", "Audio-Geräte"), ("clips", "Clips & Aufnahme"), ("soundboard", "Soundboard"),
-                  ("fernbedienung", "Fernbedienung"), ("trigger", "Sprach-Trigger"), ("hotkeys", "Hotkeys"), ("backup", "Backup & Umzug"), ("ueber", "Über Potato Clips")]
+                  ("fernbedienung", "Fernbedienung"), ("trigger", "Sprach-Trigger"), ("hotkeys", "Hotkeys"), ("schutz", "Ohrenschutz"), ("profile", "Profile pro Spiel"),
+                  ("backup", "Backup & Umzug"), ("ueber", "Über Potato Clips")]
 
     def __init__(self, ctl):
         super().__init__()
@@ -217,6 +223,18 @@ class SettingsTab(QWidget):
         self._vc_label()
         self._row(sec, "Voice-Chat-Apps", "Wo deine Freunde reden – z. B. Discord, Fortnite, WhatsApp. Diese Apps "
                   "werden beim Ducking verschont und nie als Musik an den Chat geschickt", self.vc_btn)
+        self.hook = QLineEdit(cfg["discord_webhook"] or "")
+        self.hook.setPlaceholderText("https://discord.com/api/webhooks/…")
+        self.hook.setEchoMode(QLineEdit.PasswordEchoOnEdit)
+        self.hook.setMinimumWidth(240)
+        self.hook.setMaximumWidth(340)
+        self.hook.editingFinished.connect(self._hook_saved)
+        self.hook_test = QPushButton("Testen")
+        self.hook_test.clicked.connect(self._hook_test)
+        self._row(sec, "Discord-Webhook (Clips posten)",
+                  "In Discord: Kanal bearbeiten → Integrationen → Webhooks → Neuer Webhook → „Webhook-URL kopieren“ "
+                  "und hier einfügen. Dann kannst du Clips mit einem Klick in den Kanal schicken.",
+                  [self.hook, self.hook_test])
         info = QWidget()
         il = QVBoxLayout(info)
         il.setContentsMargins(20, 0, 20, 12)
@@ -614,6 +632,50 @@ class SettingsTab(QWidget):
         hwl.setContentsMargins(20, 12, 20, 14)
         hwl.addWidget(hint)
         sec.addWidget(hw)
+
+        # ================= Ohrenschutz
+        sec = self._section("schutz", "Ohrenschutz")
+        self.guard_sw = ToggleSwitch()
+        self.guard_sw.setChecked(bool(cfg["ear_guard"]))
+        self.guard_sw.toggled.connect(self._guard_toggled)
+        self._row(sec, "Ohrenschutz", "Wird eine App plötzlich viel zu laut (jemand schreit in Discord, Earrape-Sound, "
+                  "Explosion), wird sie sofort leiser und danach langsam wieder normal. Gilt auch für deine eigenen "
+                  "Sounds auf dem Kopfhörer.", self.guard_sw)
+        self.guard_lvl = QComboBox()
+        for k, t in (("soft", "Locker – nur richtig Lautes"), ("normal", "Normal"), ("strict", "Streng – greift früh")):
+            self.guard_lvl.addItem(tr_text(t), k)
+        self.guard_lvl.setCurrentIndex(max(0, self.guard_lvl.findData(cfg["ear_guard_level"])))
+        self.guard_lvl.currentIndexChanged.connect(
+            lambda _i: cfg.__setitem__("ear_guard_level", self.guard_lvl.currentData()))
+        self.guard_now = QLabel("–")
+        self.guard_now.setObjectName("muted")
+        self.guard_now.setMinimumWidth(150)
+        self._row(sec, "Wie schnell eingreifen", "Deine Lautstärke in Windows bleibt, wie sie ist – es wird nur "
+                  "kurz gebremst", [self.guard_now, self.guard_lvl])
+
+        # ================= Profile pro Spiel
+        sec = self._section("profile", "Profile pro Spiel")
+        self.prof_auto = ToggleSwitch()
+        self.prof_auto.setChecked(bool(cfg["profile_auto"]))
+        self.prof_auto.toggled.connect(self._prof_auto_toggled)
+        self._row(sec, "Automatisch umschalten", "Startest du ein Spiel, gilt sein Profil: andere Sound-Hotkeys, "
+                  "anderes Sound-Rad, auf Wunsch andere Stimme. Ohne Spiel gilt alles wie gewohnt.", self.prof_auto)
+        self.prof_now = QComboBox()
+        self.prof_now.setMinimumWidth(220)
+        self.prof_now.activated.connect(self._prof_choose)
+        self._row(sec, "Gerade aktiv", None, self.prof_now)
+        self.prof_box = QWidget()
+        self.prof_lay = QVBoxLayout(self.prof_box)
+        self.prof_lay.setContentsMargins(0, 0, 0, 0)
+        self.prof_lay.setSpacing(0)
+        sec.addWidget(self.prof_box)
+        b_new = QPushButton("+ Neues Profil")
+        b_new.clicked.connect(lambda: self._prof_edit(None))
+        self._row(sec, "Profil anlegen", "Zum Beispiel „Fortnite“: nur die Sounds aus dem Ordner „Fortnite“ auf den "
+                  "Hotkeys, Rad mit Favoriten", b_new)
+        self._fill_profiles()
+        ctl.profileChanged.connect(lambda _p: self._fill_profiles())
+        ctl.soundsChanged.connect(self._fill_profiles)
 
         # ================= Backup & Umzug
         sec = self._section("backup", "Backup & Umzug")
@@ -1115,6 +1177,111 @@ class SettingsTab(QWidget):
         if self.ac_sw.isChecked() and self.sender() is self.ac_sw:
             self.ctl.toast.emit("🔥 Auto-Clip an – laute Momente werden automatisch gespeichert", "ok")
 
+    # ---- Discord-Webhook
+    def _hook_saved(self):
+        from .. import webhook
+        url = self.hook.text().strip()
+        if url and not webhook.valid(url):
+            self.ctl.toast.emit("Das ist kein Discord-Webhook-Link (beginnt mit https://discord.com/api/webhooks/)",
+                                "warn")
+            return
+        self.ctl.cfg["discord_webhook"] = url
+
+    def _hook_test(self):
+        import tempfile
+        from pathlib import Path
+        import numpy as np
+        import soundfile as sf
+        self._hook_saved()
+        from .. import webhook
+        if not webhook.valid(self.ctl.cfg["discord_webhook"]):
+            self.ctl.toast.emit("Erst einen Discord-Webhook eintragen", "warn")
+            return
+        t = np.arange(24000) / 48000
+        beep = (0.2 * np.sin(2 * np.pi * 660 * t) * np.minimum(1, (24000 - np.arange(24000)) / 4000))
+        path = Path(tempfile.gettempdir()) / "Potato Clips Test.ogg"
+        sf.write(str(path), beep.astype(np.float32), 48000, format="OGG")
+        self.ctl.post_to_discord(str(path), "🥔 Potato Clips ist verbunden!")
+
+    # ---- Ohrenschutz
+    def _guard_toggled(self, on):
+        self.ctl.cfg["ear_guard"] = bool(on)
+        if not on:
+            self.ctl.guard.reset()
+
+    # ---- Profile
+    def _prof_auto_toggled(self, on):
+        self.ctl.cfg["profile_auto"] = bool(on)
+        self.ctl.profile_watch.poke()
+        if not on and not self.ctl.cfg["profile_manual"]:
+            self.ctl.set_profile("")
+
+    def _prof_choose(self, _i=None):
+        self.ctl.choose_profile(self.prof_now.currentData() or "")
+
+    def _fill_profiles(self, *_):
+        profs = self.ctl.profiles()
+        self.prof_now.blockSignals(True)
+        self.prof_now.clear()
+        act = (self.ctl.profile or {}).get("id", "")
+        self.prof_now.addItem(tr_text("Automatisch") + (f" ({self.ctl.profile['name']})" if act and not
+                                                       self.ctl.cfg["profile_manual"] else ""), "")
+        for p in profs:
+            self.prof_now.addItem(p["name"], p["id"])
+        self.prof_now.setCurrentIndex(max(0, self.prof_now.findData(self.ctl.cfg["profile_manual"] or "")))
+        self.prof_now.blockSignals(False)
+        while self.prof_lay.count():
+            w = self.prof_lay.takeAt(0).widget()
+            if w is not None:
+                w.deleteLater()
+        from ..capture import pretty_app_name
+        for p in profs:
+            apps = ", ".join(pretty_app_name(a) for a in p["apps"]) or tr_text("kein Spiel gewählt")
+            b_ed = QPushButton(tr_text("Bearbeiten"))
+            b_ed.clicked.connect(lambda _=False, pid=p["id"]: self._prof_edit(pid))
+            b_del = QPushButton(tr_text("Löschen"))
+            b_del.clicked.connect(lambda _=False, pid=p["id"]: self._prof_delete(pid))
+            mark = "● " if p["id"] == act else ""
+            row = QFrame()
+            row.setObjectName("row")
+            h = QHBoxLayout(row)
+            h.setContentsMargins(20, 10, 20, 10)
+            lab = QLabel(f"<b>{mark}{_html(p['name'])}</b><br><span style='opacity:.7'>{_html(apps)}</span>")
+            lab.setTextFormat(Qt.RichText)
+            h.addWidget(lab, 1)
+            h.addWidget(b_ed)
+            h.addWidget(b_del)
+            self.prof_lay.addWidget(row)
+
+    def _prof_edit(self, pid):
+        from ..profiles import new_profile
+        from .profile_dialog import ProfileDialog
+        profs = self.ctl.profiles()
+        cur = next((p for p in profs if p["id"] == pid), None) or new_profile(tr_text("Neues Profil"))
+        dlg = ProfileDialog(self.ctl, cur, self)
+        if not dlg.exec():
+            return
+        newp = dlg.result_profile()
+        if any(p["id"] == newp["id"] for p in profs):
+            profs = [newp if p["id"] == newp["id"] else p for p in profs]
+        else:
+            profs.append(newp)
+        self.ctl.save_profiles(profs)
+        self._fill_profiles()
+        if not newp["apps"]:
+            self.ctl.toast.emit("Profil gespeichert – ohne Spiel wird es nur von Hand aktiv", "info")
+
+    def _prof_delete(self, pid):
+        profs = self.ctl.profiles()
+        p = next((x for x in profs if x["id"] == pid), None)
+        if not p:
+            return
+        if QMessageBox.question(self, tr_text("Profil löschen"),
+                                tr_text("Profil „{n}“ löschen?").format(n=p["name"])) != QMessageBox.Yes:
+            return
+        self.ctl.save_profiles([x for x in profs if x["id"] != pid])
+        self._fill_profiles()
+
     # ---- Voice-Chat-Apps
     KNOWN_VOICE = [("discord.exe", "Discord"), ("fortniteclient-win64-shipping.exe", "Fortnite"),
                    ("whatsapp.root.exe", "WhatsApp"), ("whatsapp.exe", "WhatsApp (alt)"),
@@ -1359,6 +1526,19 @@ class SettingsTab(QWidget):
         ctl = self.ctl
         self._live_ticks = getattr(self, "_live_ticks", 0) + 1
         self.mon_warn.setVisible("CABLE" in str(self.monitor.currentData() or "").upper())
+        # Ohrenschutz: zuletzt gebremst
+        g = ctl.guard
+        if not ctl.cfg["ear_guard"]:
+            self.guard_now.setText("–")
+        elif g.fac:
+            from ..capture import pretty_app_name
+            self.guard_now.setText("🛡 " + ", ".join(pretty_app_name(e) for e in list(g.fac)[:2]) + " "
+                                   + tr_text("gebremst"))
+        elif g.last_event[0]:
+            from ..capture import pretty_app_name
+            self.guard_now.setText(tr_text("zuletzt: ") + pretty_app_name(g.last_event[0]))
+        else:
+            self.guard_now.setText(tr_text("alles ruhig"))
         if self._live_ticks % 20 == 0:          # alle 3 s: neue/beendete Apps in Auto-Clip und Sprachbefehlen
             self._ac_label()
             if self._dl is None:

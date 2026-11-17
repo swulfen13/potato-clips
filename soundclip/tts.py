@@ -1,38 +1,67 @@
-"""Text vorlesen lassen – mit den Windows-Stimmen, komplett lokal (System.Speech ueber PowerShell)."""
+"""Text vorlesen lassen – mit den Windows-Stimmen, komplett lokal (SAPI direkt per COM, ohne PowerShell)."""
 from __future__ import annotations
 
-import base64
-import json
-import subprocess
+import ctypes
 import tempfile
+import threading
 import uuid
 from pathlib import Path
 
-CREATE_NO_WINDOW = 0x08000000
 _voices: list[dict] | None = None
+_lock = threading.Lock()
+SAFT48kHz16BitStereo = 39
+SSFMCreateForWrite = 3
+SVSFIsNotXML = 16
 
 
-def _ps(script: str, timeout: float = 30) -> str:
-    enc = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
-    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", enc],
-                       capture_output=True, timeout=timeout, creationflags=CREATE_NO_WINDOW)
-    if r.returncode != 0:
-        raise RuntimeError(r.stderr.decode("utf-8", "replace").strip()[:300] or "PowerShell-Fehler")
-    return r.stdout.decode("utf-8", "replace")
+def _culture(lcid_hex: str) -> str:
+    try:
+        lcid = int(str(lcid_hex).split(";")[0], 16)
+        buf = ctypes.create_unicode_buffer(85)
+        if ctypes.windll.kernel32.LCIDToLocaleName(lcid, buf, 85, 0):
+            return buf.value
+    except Exception:
+        pass
+    return ""
+
+
+class _Com:
+    """COM fuer den aktuellen Thread an- und wieder abmelden."""
+
+    def __enter__(self):
+        import comtypes
+        try:
+            comtypes.CoInitializeEx()
+            self.inited = True
+        except OSError:              # Thread hat COM schon in anderer Art gestartet - dann einfach nutzen
+            self.inited = False
+        return self
+
+    def __exit__(self, *a):
+        import comtypes
+        if self.inited:
+            comtypes.CoUninitialize()
+
+
+def _tokens(sp):
+    toks = sp.GetVoices()
+    return [toks.Item(i) for i in range(toks.Count)]
 
 
 def voices() -> list[dict]:
     """Installierte Windows-Stimmen: [{"name", "culture", "gender"}]."""
     global _voices
     if _voices is None:
-        out = _ps("[Console]::OutputEncoding=[Text.Encoding]::UTF8; Add-Type -AssemblyName System.Speech;"
-                  "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer;"
-                  "$s.GetInstalledVoices() | Where-Object {$_.Enabled} | ForEach-Object {"
-                  "[pscustomobject]@{name=$_.VoiceInfo.Name; culture=$_.VoiceInfo.Culture.Name;"
-                  "gender=[string]$_.VoiceInfo.Gender}} | ConvertTo-Json -Compress")
-        out = out.strip()
-        data = json.loads(out) if out else []
-        _voices = data if isinstance(data, list) else [data]
+        import comtypes.client as cc
+        with _lock, _Com():
+            sp = cc.CreateObject("SAPI.SpVoice", dynamic=True)
+            out = []
+            for t in _tokens(sp):
+                out.append({"name": str(t.GetAttribute("Name") or t.GetDescription()),
+                            "culture": _culture(t.GetAttribute("Language")),
+                            "gender": str(t.GetAttribute("Gender") or "")})
+            del sp
+        _voices = out
     return _voices
 
 
@@ -42,18 +71,27 @@ def synth(text: str, voice: str = "", rate: int = 0) -> Path:
     if not text:
         raise ValueError("kein Text")
     path = Path(tempfile.gettempdir()) / f"potato_tts_{uuid.uuid4().hex[:8]}.wav"
-    # Text und Stimme als Base64, damit keine Zeichen das Skript kaputt machen koennen
-    t64 = base64.b64encode(text.encode("utf-8")).decode("ascii")
-    v64 = base64.b64encode((voice or "").encode("utf-8")).decode("ascii")
     rate = max(-10, min(10, int(rate)))
-    _ps("Add-Type -AssemblyName System.Speech;"
-        "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer;"
-        f"$t=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{t64}'));"
-        f"$v=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{v64}'));"
-        "if($v){ try { $s.SelectVoice($v) } catch {} };"
-        f"$s.Rate={rate};"
-        f"$s.SetOutputToWaveFile('{str(path).replace(chr(39), chr(39) * 2)}');"
-        "$s.Speak($t); $s.Dispose()", timeout=60)
+    import comtypes.client as cc
+    with _lock, _Com():
+        sp = cc.CreateObject("SAPI.SpVoice", dynamic=True)
+        if voice:
+            for t in _tokens(sp):
+                if str(t.GetAttribute("Name")) == voice or str(t.GetDescription()).startswith(voice):
+                    sp.Voice = t
+                    break
+        st = cc.CreateObject("SAPI.SpFileStream", dynamic=True)
+        fmt = cc.CreateObject("SAPI.SpAudioFormat", dynamic=True)
+        fmt.Type = SAFT48kHz16BitStereo
+        st.Format = fmt
+        st.Open(str(path), SSFMCreateForWrite, False)
+        try:
+            sp.AudioOutputStream = st
+            sp.Rate = rate
+            sp.Speak(text, SVSFIsNotXML)   # synchron; Text nie als Steuer-XML lesen (kommt evtl. vom Handy)
+        finally:
+            st.Close()
+            del st, fmt, sp
     if not path.exists() or path.stat().st_size < 100:
         raise RuntimeError("keine Sprachausgabe erzeugt")
     return path

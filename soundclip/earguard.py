@@ -65,10 +65,10 @@ class EarGuard:
         now = time.time()
         with self.lock:
             w = self.win.setdefault(exe, [])
-            w.append(rms)
+            w.append(rms / self._measured_factor(exe, now))  # so laut waere es ohne uns
             if len(w) > 3:
                 del w[0]
-            est = max(w) / self._measured_factor(exe, now)   # so laut waere es ohne uns
+            est = max(w)
             want = min(1.0, self.threshold() / est) if est > 0 else 1.0
             cur = self.fac.get(exe, 1.0)
             if want < 1.0:

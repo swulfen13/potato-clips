@@ -19,7 +19,8 @@ if __name__ == "__main__" and "--selftest" in sys.argv:
                        ("ffmpeg", lambda: __import__("os").path.getsize(__import__("imageio_ffmpeg").get_ffmpeg_exe())),
                        ("qrcode", lambda: __import__("qrcode").QRCode().add_data("x")),
                        ("remote", lambda: __import__("soundclip.remote").remote.lan_ip()),
-                       ("helper", lambda: __import__("soundclip.config").config.HELPER.exists() or 1 / 0)):
+                       ("helper", lambda: __import__("soundclip.config").config.HELPER.exists() or 1 / 0),
+                       ("tts", lambda: len(__import__("soundclip.tts").tts.voices()))):
         try:
             _r = _fn()
             _res[_name] = "ok " + str(_r if isinstance(_r, (int, str)) else "")

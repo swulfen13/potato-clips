@@ -604,6 +604,28 @@ class Controller(QObject):
         from .host import HelperHost
         HelperHost.get().command(text)
 
+    def post_to_discord(self, path: str, text: str = "", done=None):
+        """Datei im Hintergrund an den Discord-Webhook schicken; Ergebnis als Meldung."""
+        from . import webhook
+        url = str(self.cfg["discord_webhook"] or "").strip()
+        if not webhook.valid(url):
+            self.toast.emit("Erst einen Discord-Webhook eintragen: Einstellungen → Discord & Freunde", "warn")
+            return False
+
+        def work():
+            try:
+                webhook.post(url, path, text)
+                self.toast.emit("📤 In Discord gepostet", "ok")
+                ok = True
+            except Exception as e:
+                from .i18n import tr
+                self.toast.emit("Discord: " + tr(str(e)), "warn")
+                ok = False
+            if done:
+                done(ok)
+        threading.Thread(target=work, daemon=True).start()
+        return True
+
     def voice_apps(self) -> set[str]:
         """Apps, in denen deine Freunde reden (Discord, Voice-Chat im Spiel, WhatsApp ...)."""
         return {str(a).lower() for a in (self.cfg["voice_chat_apps"] or [])}

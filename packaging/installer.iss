@@ -63,7 +63,6 @@ Type: filesandordirs; Name: "{app}\_internal"
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
-Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "--minimized"; Tasks: autostart
 
 [Run]
 Filename: "https://vb-audio.com/Cable/"; Description: "{cm:GetCable}"; Flags: shellexec postinstall skipifsilent nowait unchecked; Check: not CableInstalled
@@ -74,6 +73,9 @@ Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent and ShouldRelaun
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/f /im {#AppExe}"; Flags: runhidden; RunOnceId: "KillApp"
 Filename: "{sys}\taskkill.exe"; Parameters: "/f /im audiocap.exe"; Flags: runhidden; RunOnceId: "KillHelper"
+
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; ValueData: """{app}\{#AppExe}"" --minimized"; Tasks: autostart; Flags: uninsdeletevalue
 
 [UninstallDelete]
 Type: files; Name: "{userstartup}\{#AppName}.lnk"
@@ -108,4 +110,11 @@ begin
   Result := FileExists(ExpandConstant('{sys}\drivers\vbaudio_cable64_win10.sys')) or
             FileExists(ExpandConstant('{sys}\drivers\vbaudio_cable64_win7.sys')) or
             FileExists(ExpandConstant('{sys}\drivers\vbaudio_cable64arm_win10.sys'));
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  { Autostart-Eintrag immer entfernen - auch wenn er spaeter in der App eingeschaltet wurde }
+  if CurUninstallStep = usUninstall then
+    RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', '{#AppName}');
 end;

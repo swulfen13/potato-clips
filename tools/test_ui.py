@@ -141,6 +141,25 @@ def voice_apps_check():
           st.vc_btn.text())
 
 
+prof_state = {}
+
+
+def profile_start():
+    ctl.save_profiles([{"id": "tp1", "name": "Testspiel", "apps": ["python.exe"], "folder": "*fav",
+                        "wheel_source": "fav", "voice": ""}])
+    prof_state["t0"] = time.time()
+
+
+def profile_check():
+    p = ctl.profile or {}
+    st = win.settings
+    st._fill_profiles()
+    ok1 = p.get("id") == "tp1" and ctl.wheel_source() == "fav" and st.prof_lay.count() == 1
+    ctl.save_profiles([])
+    ok2 = ctl.profile is None and st.prof_now.count() == 1
+    print("CHECK Profile:", "OK" if ok1 and ok2 else "FEHLER", p.get("name"), ok1, ok2)
+
+
 def wrapped_check():
     pm = win.wrapped.view.pixmap()
     print("CHECK Wrapped-Seite:", "OK" if pm is not None and not pm.isNull() and ctl.stats.summary()["plays"] >= 1
@@ -381,6 +400,8 @@ step(1200, open_clip)
 step(800, shot("2_clips"))
 step(100, clip_search_test)
 step(100, voice_apps_check)
+step(100, profile_start)
+step(4500, profile_check)
 step(100, wrapped_test)
 step(800, wrapped_check)
 step(100, shot("8_wrapped"))
@@ -409,6 +430,8 @@ step(100, lambda: win.settings._goto("trigger"))
 step(500, shot("4g_einstellungen_trigger"))
 step(100, lambda: win.settings._goto("backup"))
 step(500, shot("4h_einstellungen_backup"))
+step(100, lambda: win.settings._goto("schutz"))
+step(500, shot("4i_einstellungen_schutz_profile"))
 step(100, overlay_shot)
 step(800, wizard_lang_test)
 step(2500, finish)

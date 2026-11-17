@@ -4,6 +4,7 @@ scipy>=1.11
 soundfile>=0.12
 keyboard>=0.13.5
 psutil>=5.9
+comtypes>=1.4         # Windows-Sprachausgabe direkt (ohne PowerShell)
 pyrnnoise>=0.4      # liefert rnnoise.dll (KI-Rauschfilter)
 vosk>=0.3.45         # Sprach-Trigger (offline)
 qrcode>=7.4          # QR-Code fuer die Handy-Fernbedienung

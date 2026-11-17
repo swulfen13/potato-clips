@@ -65,6 +65,12 @@
 - **Effekte pro Sound:** Jedem Sound einen eigenen Effekt geben (Helium-Furz, Dämonen-Lachen …), mit Stärke und
   Vorhören.
 - **Potato Wrapped:** Deine Statistik (Top-Sounds, Clips, Lieblings-Stimme …) als Bild zum Teilen – bleibt lokal.
+- **Ohrenschutz:** Wird eine App plötzlich viel zu laut (Schreien im Voice-Chat, Earrape-Sounds), wird sie sofort
+  leiser und danach langsam wieder normal – auch deine eigenen Sounds auf dem Kopfhörer.
+- **Profile pro Spiel:** Startest du ein Spiel, gelten automatisch seine Sound-Hotkeys, sein Sound-Rad und auf Wunsch
+  eine andere Stimme.
+- **Clips in Discord posten:** Mit einem Discord-Webhook landen Clips und Videos per Klick direkt im Kanal.
+- **Voice-Chat-Apps frei wählbar:** Nicht nur Discord – auch Fortnite, WhatsApp, TeamSpeak & Co.
 - **Backup & Umzug:** Alle Sounds, Hotkeys und Einstellungen (optional Clips) in eine `.potatobackup`-Datei und auf
   dem neuen PC wieder einspielen. Der alte Stand wird dabei immer aufgehoben.
 - **Alles lokal.** Nichts wird hochgeladen, keine Konten und kein Tracking.

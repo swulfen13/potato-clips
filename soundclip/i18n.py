@@ -569,6 +569,52 @@ _NEW12.update({
     "Programmname, z. B. „RainbowSix.exe“ (steht im Task-Manager unter Details):":
         "Program name, e.g. “RainbowSix.exe” (shown in Task Manager under Details):",
     "Steam-Chat": "Steam chat", "WhatsApp (alt)": "WhatsApp (old)",
+    # 1.6: Ohrenschutz, Profile, Discord-Webhook
+    "Ohrenschutz": "Hearing protection", "Profile pro Spiel": "Per-game profiles",
+    "Wird eine App plötzlich viel zu laut (jemand schreit in Discord, Earrape-Sound, Explosion), wird sie sofort leiser und danach langsam wieder normal. Gilt auch für deine eigenen Sounds auf dem Kopfhörer.":
+        "If an app suddenly gets far too loud (someone screams on Discord, an earrape sound, an explosion), it is turned down instantly and then slowly back to normal. Also applies to your own sounds on your headphones.",
+    "Locker – nur richtig Lautes": "Relaxed – only really loud stuff", "Normal": "Normal",
+    "Streng – greift früh": "Strict – steps in early", "Wie schnell eingreifen": "How early to step in",
+    "Deine Lautstärke in Windows bleibt, wie sie ist – es wird nur kurz gebremst":
+        "Your Windows volume stays as it is – it only brakes briefly",
+    "gebremst": "turned down", "zuletzt: ": "last: ", "alles ruhig": "all quiet",
+    "Automatisch umschalten": "Switch automatically",
+    "Startest du ein Spiel, gilt sein Profil: andere Sound-Hotkeys, anderes Sound-Rad, auf Wunsch andere Stimme. Ohne Spiel gilt alles wie gewohnt.":
+        "When you start a game, its profile applies: other sound hotkeys, another sound wheel, optionally another voice. Without a game everything works as usual.",
+    "Gerade aktiv": "Active now", "Neues Profil": "New profile", "Profil anlegen": "Create profile",
+    "Zum Beispiel „Fortnite“: nur die Sounds aus dem Ordner „Fortnite“ auf den Hotkeys, Rad mit Favoriten":
+        "For example “Fortnite”: only the sounds from the “Fortnite” folder on the hotkeys, wheel with favorites",
+    "Automatisch": "Automatic", "kein Spiel gewählt": "no game selected", "Bearbeiten": "Edit", "Löschen": "Delete",
+    "Profil löschen": "Delete profile", "Profil „{n}“ löschen?": "Delete profile “{n}”?",
+    "Profil gespeichert – ohne Spiel wird es nur von Hand aktiv": "Profile saved – without a game it only activates manually",
+    "Profil bearbeiten": "Edit profile", "Name": "Name", "Laufende App": "Running app", "Spiel / App": "Game / app",
+    "Tipp: Spiel starten, dann über „Laufende App …“ auswählen.": "Tip: start the game, then pick it via “Running app …”.",
+    "Alle Sounds": "All sounds", "Nur Favoriten": "Favorites only", "Sound-Hotkeys": "Sound hotkeys",
+    "Wie in den Einstellungen": "Same as in settings", "Nicht ändern": "Don't change", "Stimmeffekt aus": "Voice effect off",
+    "Stimme": "Voice", "Gerade läuft keine App mit Ton": "No app with sound is running right now", "Profil": "Profile",
+    "Noch keine Profile – Einstellungen → Profile pro Spiel": "No profiles yet – Settings → Per-game profiles",
+    "Profil: Standard": "Profile: default",
+    "Discord-Webhook (Clips posten)": "Discord webhook (post clips)",
+    "In Discord: Kanal bearbeiten → Integrationen → Webhooks → Neuer Webhook → „Webhook-URL kopieren“ und hier einfügen. Dann kannst du Clips mit einem Klick in den Kanal schicken.":
+        "In Discord: Edit channel → Integrations → Webhooks → New webhook → “Copy webhook URL” and paste it here. Then you can send clips to the channel with one click.",
+    "Testen": "Test", "In Discord posten": "Post to Discord",
+    "Clip direkt in deinen Discord-Kanal schicken (Webhook in den Einstellungen)":
+        "Send the clip straight to your Discord channel (webhook in settings)",
+    "Trag zuerst einen Discord-Webhook ein:\nEinstellungen → Discord & Freunde → „Discord-Webhook“.":
+        "Add a Discord webhook first:\nSettings → Discord & friends → “Discord webhook”.",
+    "Danach direkt in Discord posten": "Post to Discord afterwards",
+    "Dafür in den Einstellungen einen Discord-Webhook eintragen": "Add a Discord webhook in settings for this",
+    "In Discord gepostet": "Posted to Discord",
+    "Erst einen Discord-Webhook eintragen: Einstellungen → Discord & Freunde":
+        "Add a Discord webhook first: Settings → Discord & friends",
+    "Erst einen Discord-Webhook eintragen": "Add a Discord webhook first",
+    "Das ist kein Discord-Webhook-Link (beginnt mit https://discord.com/api/webhooks/)":
+        "That's not a Discord webhook link (starts with https://discord.com/api/webhooks/)",
+    "Das ist kein Discord-Webhook-Link.": "That's not a Discord webhook link.",
+    "Die Datei ist größer als 10 MB – Discord nimmt sie nicht an.": "The file is larger than 10 MB – Discord won't accept it.",
+    "Der Webhook existiert nicht mehr oder wurde gelöscht.": "The webhook doesn't exist anymore or was deleted.",
+    "Die Datei ist zu groß für Discord.": "The file is too big for Discord.",
+    "Discord sagt: zu viele Nachrichten – kurz warten.": "Discord says: too many messages – wait a moment.",
 })
 for _k, _v in _NEW12.items():
     EN[_k] = _v
@@ -596,6 +642,10 @@ EN_PATTERNS += [(re.compile(a), b) for a, b in [
     (r"^Ungültiger Eintrag im Backup: (.+)$", r"Invalid entry in the backup: \1"),
     (r"^Das ist keine gültige Backup-Datei \((.+)\)\.$", r"This is not a valid backup file (\1)."),
     (r"^Ordner: (.+)$", r"Folder: \1"),
+    (r"^🎮 Profil: (.+)$", r"🎮 Profile: \1"),
+    (r"^Discord: (.+)$", r"Discord: \1"),
+    (r"^Discord-Fehler (\d+)$", r"Discord error \1"),
+    (r"^Keine Verbindung zu Discord \((.+)\)\.$", r"No connection to Discord (\1)."),
 ]]
 
 # ---------------------------------------------------------------- Potato-Modus (Texte ueber der Sprache)
