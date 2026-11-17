@@ -78,7 +78,7 @@ def intruder_text(ctl) -> str:
 class SettingsTab(QWidget):
     CATEGORIES = [("allgemein", "Allgemein"), ("discord", "Discord & Freunde"), ("mikrofon", "Mikrofon"),
                   ("geraete", "Audio-Geräte"), ("clips", "Clips & Aufnahme"), ("soundboard", "Soundboard"),
-                  ("hotkeys", "Hotkeys"), ("ueber", "Über Potato Clips")]
+                  ("fernbedienung", "Fernbedienung"), ("trigger", "Sprach-Trigger"), ("hotkeys", "Hotkeys"), ("ueber", "Über Potato Clips")]
 
     def __init__(self, ctl):
         super().__init__()
@@ -340,6 +340,31 @@ class SettingsTab(QWidget):
         self.autocopy.toggled.connect(lambda v: cfg.__setitem__("clip_autocopy", v))
         self._row(sec, "Neue Clips sofort kopieren",
                   "Nach dem Clippen liegt der Clip als MP3 in der Zwischenablage – in Discord Strg+V", self.autocopy)
+        self.ac_sw = ToggleSwitch()
+        self.ac_sw.setChecked(bool(cfg["autoclip_enabled"]))
+        self.ac_sw.toggled.connect(self._autoclip)
+        self._row(sec, "Auto-Clip", "Speichert von selbst einen Clip, wenn es laut wird – Schreien, Lachen, Jubel",
+                  self.ac_sw)
+        self.ac_src = QComboBox()
+        for k, t in (("discord", "Wenn Freunde in Discord laut werden"), ("mic", "Wenn ich laut werde (Mikro)"),
+                     ("any", "Wenn irgendwas laut wird")):
+            self.ac_src.addItem(t, k)
+        self.ac_src.setCurrentIndex(max(0, self.ac_src.findData(cfg["autoclip_source"])))
+        self.ac_src.currentIndexChanged.connect(self._autoclip)
+        self._row(sec, "Auslöser", None, self.ac_src)
+        self.ac_thr = QSlider(Qt.Horizontal)
+        self.ac_thr.setRange(-40, -3)
+        self.ac_thr.setFixedWidth(170)
+        self.ac_thr.setValue(int(round(float(cfg["autoclip_db"]))))
+        self.ac_thr_lbl = QLabel(f"{self.ac_thr.value()} dB".replace("-", "−"))
+        self.ac_thr_lbl.setFixedWidth(56)
+        self.ac_thr.valueChanged.connect(lambda v: (cfg.__setitem__("autoclip_db", float(v)),
+                                                    self.ac_thr_lbl.setText(f"{v} dB".replace("-", "−"))))
+        self.ac_now = QLabel("–")
+        self.ac_now.setObjectName("muted")
+        self.ac_now.setFixedWidth(120)
+        self._row(sec, "Ab dieser Lautstärke", "Rechts siehst du, wie laut es gerade ist – Schwelle etwas darüber setzen",
+                  [self.ac_thr, self.ac_thr_lbl, self.ac_now])
         b = QPushButton("Ordner öffnen")
         b.clicked.connect(lambda: subprocess.Popen(["explorer", str(DATA_DIR)]))
         self._row(sec, "Speicherort", str(DATA_DIR), b)
@@ -372,7 +397,123 @@ class SettingsTab(QWidget):
         self.duck_dc.setChecked(cfg["duck_discord"])
         self.duck_dc.toggled.connect(lambda v: cfg.__setitem__("duck_discord", v))
         self._row(sec, "Auch Discord leiser machen", "Aus = deine Freunde bleiben immer gleich laut", self.duck_dc)
+        self.norm_sw = ToggleSwitch()
+        self.norm_sw.setChecked(bool(cfg["normalize_sounds"]))
+        self.norm_sw.toggled.connect(lambda v: cfg.__setitem__("normalize_sounds", v))
+        self._row(sec, "Alle Sounds gleich laut", "Leise Sounds werden lauter, laute leiser – die Lautstärke pro Sound "
+                  "gilt zusätzlich", self.norm_sw)
+        self.trim_sw = ToggleSwitch()
+        self.trim_sw.setChecked(bool(cfg["auto_trim"]))
+        self.trim_sw.toggled.connect(lambda v: cfg.__setitem__("auto_trim", v))
+        self._row(sec, "Stille beim Hinzufügen abschneiden", "Sounds starten sofort, ohne Pause am Anfang", self.trim_sw)
         self.soundboard_section = sec
+
+        # ================= Handy & Stream Deck
+        sec = self._section("fernbedienung", "Handy, Stream Deck & OBS")
+        self.rm_sw = ToggleSwitch()
+        self.rm_sw.setChecked(bool(cfg["remote_enabled"]))
+        self.rm_sw.toggled.connect(self._remote)
+        self._row(sec, "Handy als Fernbedienung", "Handy im selben WLAN: QR-Code scannen, Soundboard im Browser – "
+                  "keine App nötig", self.rm_sw)
+        self.qr_box = QFrame()
+        self.qr_box.setObjectName("row")
+        ql = QHBoxLayout(self.qr_box)
+        ql.setContentsMargins(20, 12, 20, 14)
+        ql.setSpacing(18)
+        self.qr = QrView()
+        ql.addWidget(self.qr)
+        qt = QVBoxLayout()
+        self.qr_url = QLabel()
+        self.qr_url.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.qr_url.setWordWrap(True)
+        self.qr_url.setStyleSheet("font-weight: 700; background: transparent;")
+        qt.addWidget(self.qr_url)
+        qh = QLabel("Mit der Handy-Kamera scannen. Fragt Windows nach der Firewall: „Private Netzwerke“ erlauben.\n"
+                    "Der Link enthält einen geheimen Schlüssel – nur an Leute geben, die dein Soundboard steuern dürfen.")
+        qh.setObjectName("muted")
+        qh.setWordWrap(True)
+        qt.addWidget(qh)
+        qb = QHBoxLayout()
+        b_copy = QPushButton("Link kopieren")
+        b_copy.clicked.connect(lambda: self._copy_text(self.ctl.remote.phone_url()))
+        b_new = QPushButton("Neuer Schlüssel")
+        b_new.setToolTip("Alte Links und QR-Codes funktionieren danach nicht mehr")
+        b_new.clicked.connect(self._new_token)
+        qb.addWidget(b_copy)
+        qb.addWidget(b_new)
+        qb.addStretch(1)
+        qt.addLayout(qb)
+        qt.addStretch(1)
+        ql.addLayout(qt, 1)
+        sec.addWidget(self.qr_box)
+        self.api_sw = ToggleSwitch()
+        self.api_sw.setChecked(bool(cfg["api_enabled"]))
+        self.api_sw.toggled.connect(self._remote)
+        self._row(sec, "Stream Deck & OBS", "Links, mit denen Stream Deck, OBS oder andere Programme auf diesem PC "
+                  "Potato Clips steuern", self.api_sw)
+        self.api_box = QFrame()
+        self.api_box.setObjectName("row")
+        al = QGridLayout(self.api_box)
+        al.setContentsMargins(20, 10, 20, 14)
+        al.setHorizontalSpacing(12)
+        al.setVerticalSpacing(6)
+        links = [("Alle Sounds stoppen", "/api/stop"), ("Clip speichern", "/api/clip"),
+                 ("Zufälliger Sound", "/api/random"), ("Stimmeffekt an/aus", "/api/voice/toggle"),
+                 ("Aufnahme starten/stoppen", "/api/record"), ("OBS-Overlay (Browser-Quelle)", "/overlay")]
+        for i, (label, path) in enumerate(links):
+            al.addWidget(QLabel(label), i, 0)
+            b = QPushButton("Link kopieren")
+            b.clicked.connect(lambda _=False, pth=path: self._copy_text(self.ctl.remote.local_url(pth)))
+            al.addWidget(b, i, 1)
+        al.setColumnStretch(0, 1)
+        ah = QLabel("Stream Deck: Aktion „Website“ → Link einfügen → „Im Hintergrund aufrufen“ anhaken.\n"
+                    "Einzelne Sounds: im Soundboard Rechtsklick auf den Sound → „Link für Stream Deck kopieren“.\n"
+                    "OBS: Quelle „Browser“ → Link einfügen, Breite 600, Höhe 400 – zeigt laufende Sounds, "
+                    "Stimmeffekt und REC.")
+        ah.setObjectName("muted")
+        ah.setWordWrap(True)
+        al.addWidget(ah, len(links), 0, 1, 2)
+        sec.addWidget(self.api_box)
+        self.rm_status = QLabel()
+        self.rm_status.setObjectName("muted")
+        self.rm_status.setContentsMargins(20, 0, 20, 12)
+        self.rm_status.setWordWrap(True)
+        sec.addWidget(self.rm_status)
+
+        # ================= Sprach-Trigger
+        sec = self._section("trigger", "Sprach-Trigger")
+        self.tr_sw = ToggleSwitch()
+        self.tr_sw.setChecked(bool(cfg["triggers_enabled"]))
+        self.tr_sw.toggled.connect(self._triggers)
+        self._row(sec, "Sprach-Trigger", "Sagst du ein bestimmtes Wort, spielt der passende Sound – die Erkennung "
+                  "läuft komplett auf deinem PC", self.tr_sw)
+        self.tr_lang = QComboBox()
+        for k, t in (("auto", "Wie die Oberfläche"), ("de", "Deutsch"), ("en", "English")):
+            self.tr_lang.addItem(t, k)
+        self.tr_lang.setCurrentIndex(max(0, self.tr_lang.findData(cfg["trigger_lang"])))
+        self.tr_lang.currentIndexChanged.connect(self._triggers)
+        self._row(sec, "Sprache, die erkannt wird", None, self.tr_lang)
+        self.tr_dl = QPushButton("Sprachpaket laden")
+        self.tr_dl.clicked.connect(self._download_model)
+        self._row(sec, "Sprachpaket", "Wird einmal heruntergeladen (ca. 45 MB)", self.tr_dl)
+        self.tr_heard = QLabel("–")
+        self.tr_heard.setWordWrap(True)
+        self.tr_heard.setMinimumWidth(260)
+        self.tr_heard.setStyleSheet("font-weight: 700; background: transparent;")
+        self._row(sec, "Gerade gehört", "Sprich zum Testen – hier steht, was erkannt wurde", self.tr_heard)
+        self.tr_list = QLabel()
+        self.tr_list.setWordWrap(True)
+        self.tr_list.setObjectName("muted")
+        self.tr_list.setMinimumWidth(260)
+        self._row(sec, "Deine Trigger", "Wort festlegen: im Soundboard Rechtsklick auf einen Sound → "
+                  "„Name, Hotkey, Ordner, Sprach-Trigger…“. Kurze, eindeutige Wörter klappen am besten.", self.tr_list)
+        self._dl = None
+        self._live_timer = QTimer(self)
+        self._live_timer.timeout.connect(self._live_tick)
+        self._live_timer.start(150)
+        ctl.soundsChanged.connect(self._trigger_info)
+        self._remote_ui()
+        self._trigger_info()
 
         # ================= Hotkeys
         sec = self._section("hotkeys", "Hotkeys")
@@ -765,7 +906,140 @@ class SettingsTab(QWidget):
             self.auto.blockSignals(False)
             self.ctl.toast.emit(f"Autostart fehlgeschlagen: {e}", "warn")
 
+    # ---- Auto-Clip
+    def _autoclip(self, *_):
+        self.ctl.cfg.update(autoclip_enabled=self.ac_sw.isChecked(), autoclip_source=self.ac_src.currentData())
+        self.ctl.sources.poke()
+        if self.ac_sw.isChecked() and self.sender() is self.ac_sw:
+            self.ctl.toast.emit("🔥 Auto-Clip an – laute Momente werden automatisch gespeichert", "ok")
+
+    # ---- Fernbedienung
+    def _copy_text(self, text):
+        from PySide6.QtWidgets import QApplication
+        if not self.ctl.remote.running:
+            self.ctl.toast.emit("Erst oben einschalten", "warn")
+            return
+        QApplication.clipboard().setText(text)
+        self.ctl.toast.emit("🔗 Link kopiert", "ok")
+
+    def _remote(self, *_):
+        self.ctl.cfg.update(remote_enabled=self.rm_sw.isChecked(), api_enabled=self.api_sw.isChecked())
+        self.ctl.remote.sync()
+        self._remote_ui()
+
+    def _new_token(self):
+        self.ctl.cfg["remote_token"] = ""
+        from ..remote import ensure_token
+        ensure_token(self.ctl.cfg)
+        self._remote_ui()
+        self.ctl.toast.emit("Neuer Schlüssel – alte Links funktionieren nicht mehr", "info")
+
+    def _remote_ui(self):
+        r = self.ctl.remote
+        on_phone = bool(self.ctl.cfg["remote_enabled"]) and r.running
+        self.qr_box.setVisible(on_phone)
+        self.api_box.setVisible(r.running and bool(self.ctl.cfg["api_enabled"] or self.ctl.cfg["remote_enabled"]))
+        if on_phone:
+            url = r.phone_url()
+            self.qr.set_text(url)
+            self.qr_url.setText(url.split("?")[0])
+        if (self.ctl.cfg["remote_enabled"] or self.ctl.cfg["api_enabled"]) and not r.running:
+            self.rm_status.setText(tr_text("⚠ Konnte nicht gestartet werden: " + (r.error or "?")))
+            self.rm_status.show()
+        else:
+            self.rm_status.hide()
+
+    # ---- Sprach-Trigger
+    def _triggers(self, *_):
+        from .. import triggers as trg
+        self.ctl.cfg.update(triggers_enabled=self.tr_sw.isChecked(), trigger_lang=self.tr_lang.currentData())
+        lang = self.ctl.triggers.lang_wanted()
+        if self.tr_sw.isChecked() and not trg.model_ready(lang) and self._dl is None:
+            self._download_model()
+        self.ctl.triggers.sync()
+        self.ctl.sources.poke()
+        self._trigger_info()
+
+    def _download_model(self):
+        import threading
+        from .. import triggers as trg
+        if self._dl is not None:
+            return
+        lang = self.ctl.triggers.lang_wanted()
+        st = {"p": 0.0, "done": False, "err": None}
+        self._dl = st
+
+        def work():
+            try:
+                trg.download_model(lang, progress=lambda v: st.__setitem__("p", v))
+            except Exception as e:
+                st["err"] = str(e)
+            st["done"] = True
+        threading.Thread(target=work, daemon=True).start()
+        self.tr_dl.setEnabled(False)
+
+    def _trigger_info(self):
+        from .. import triggers as trg
+        lang = self.ctl.triggers.lang_wanted()
+        ready = trg.model_ready(lang)
+        if self._dl is None:
+            self.tr_dl.setEnabled(not ready)
+            self.tr_dl.setText(tr_text("Installiert ✓") if ready else tr_text("Sprachpaket laden"))
+        from .. import i18n
+        q1, q2 = ("„", "“") if i18n.LANG == "de" else ("“", "”")
+        from html import escape
+        items = [escape(f"{q1}{s['trigger']}{q2} → {s['name']}") for s in self.ctl.sounds.sounds if s.get("trigger")]
+        self.tr_list.setText("<br>".join(items) if items else tr_text("Noch keine – Rechtsklick auf einen Sound"))
+
+    def _live_tick(self):
+        if not self.isVisible():
+            return
+        ctl = self.ctl
+        # Auto-Clip-Pegel
+        db = ctl.autoclip.take_level_db()
+        if ctl.cfg["autoclip_enabled"]:
+            self._ac_db = max(db, getattr(self, "_ac_db", -90.0) - 2.0)
+            self.ac_now.setText(tr_text("gerade: " + (f"{self._ac_db:.0f} dB".replace("-", "−") if self._ac_db > -80
+                                                      else "still")))
+        else:
+            self.ac_now.setText("–")
+        # Sprach-Trigger
+        st = self._dl
+        if st is not None:
+            if st["done"]:
+                self._dl = None
+                if st["err"]:
+                    self.ctl.toast.emit("Sprachpaket-Download fehlgeschlagen: " + st["err"], "warn")
+                else:
+                    self.ctl.toast.emit("Sprachpaket installiert", "ok")
+                    self.ctl.triggers.sync()
+                    self.ctl.sources.poke()
+                self._trigger_info()
+            else:
+                self.tr_dl.setText(f"{int(st['p'] * 100)} %")
+        t = ctl.triggers
+        if not ctl.cfg["triggers_enabled"]:
+            txt = tr_text("aus")
+        elif t.error:
+            txt = "⚠ " + t.error
+        elif not t.running:
+            txt = tr_text("wartet auf das Sprachpaket")
+        elif t.heard and __import__("time").time() - t.heard_at < 8:
+            txt = t.heard
+        else:
+            txt = tr_text("hört zu …")
+        if self.tr_heard.text() != txt:
+            self.tr_heard.setText(txt)
+
     def _sync(self):
+        for w, key in ((self.rm_sw, "remote_enabled"), (self.api_sw, "api_enabled"),
+                       (self.ac_sw, "autoclip_enabled"), (self.tr_sw, "triggers_enabled"),
+                       (self.norm_sw, "normalize_sounds"), (self.trim_sw, "auto_trim")):
+            if w.isChecked() != bool(self.ctl.cfg[key]):
+                w.blockSignals(True)
+                w.setChecked(bool(self.ctl.cfg[key]))
+                w.blockSignals(False)
+        self._remote_ui()
         b = self.len_btns.get(int(self.ctl.cfg["buffer_seconds"]))
         if b is not None and not b.isChecked():
             b.setChecked(True)
@@ -782,3 +1056,37 @@ class SettingsTab(QWidget):
         self.pass_cb.blockSignals(True)
         self.pass_cb.setChecked(self.ctl.cfg["mic_passthrough"])
         self.pass_cb.blockSignals(False)
+
+
+class QrView(QWidget):
+    """QR-Code (fuer den Handy-Link)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.matrix = []
+        self.setFixedSize(176, 176)
+
+    def set_text(self, text: str):
+        try:
+            import qrcode
+            q = qrcode.QRCode(border=2, error_correction=qrcode.constants.ERROR_CORRECT_M)
+            q.add_data(text)
+            q.make(fit=True)
+            self.matrix = q.get_matrix()
+        except Exception:
+            self.matrix = []
+        self.update()
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor("white"))
+        n = len(self.matrix)
+        if not n:
+            return
+        cell = self.width() / n
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("black"))
+        for y, row in enumerate(self.matrix):
+            for x, v in enumerate(row):
+                if v:
+                    p.drawRect(QRectF(x * cell, y * cell, cell + 0.4, cell + 0.4))

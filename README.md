@@ -37,6 +37,16 @@
 - **Clips schnell teilen:** Clip als MP3 in die Zwischenablage kopieren und direkt in Discord einfügen.
 - **Sound-Packs:** Sounds als `.potatopack` exportieren und Freunden schicken; Import per Reinziehen.
 - **Auto-Updates:** Prüft auf neue Versionen auf GitHub und installiert sie auf Wunsch.
+- **Ordner, Suche & Favoriten:** Sounds in Ordner sortieren, Favoriten nach oben, 🎲 Zufalls-Sound (auch per Hotkey).
+- **Alle Sounds gleich laut:** Lautstärke wird automatisch angeglichen; Stille am Anfang wird beim Import
+  abgeschnitten. Jeder Sound lässt sich zuschneiden.
+- **Handy als Fernbedienung:** QR-Code scannen, dann ist das Soundboard im Handy-Browser (gleiches WLAN, keine App).
+- **Stream Deck & OBS:** Links für Stream Deck (Sounds, Stopp, Clip, Zufall, Stimmeffekt) und ein OBS-Overlay
+  als Browser-Quelle.
+- **Sprach-Trigger:** Sag ein Wort, und der passende Sound spielt. Die Spracherkennung (Vosk) läuft komplett offline,
+  das Sprachpaket (~45 MB) wird beim ersten Einschalten geladen.
+- **Auto-Clip:** Wird es im Call laut (Schreien, Lachen, Jubel), wird automatisch ein Clip gespeichert.
+- **Clip als Video:** MP4 mit animierter Wellenform im Hochformat (TikTok/Shorts/Reels), Quer- oder Quadratformat.
 - **Alles lokal.** Nichts wird hochgeladen, keine Konten und kein Tracking.
 
 ![Clips & Editor](docs/screenshot-clips.png)
@@ -77,6 +87,17 @@ Potato Clips startet danach im Hintergrund. Das Fenster zu schließen beendet es
 | Effekt stärker / schwächer | `Strg+Alt+Bild↑` / `Strg+Alt+Bild↓` |
 
 Alles ist unter Einstellungen änderbar. Sound-Hotkeys setzt du im Soundboard per Rechtsklick auf einen Sound.
+
+## Handy, Stream Deck & OBS
+
+- **Handy:** Einstellungen → *Fernbedienung* → „Handy als Fernbedienung“ einschalten und den QR-Code scannen.
+  Fragt Windows nach der Firewall, „Private Netzwerke“ erlauben. Der Link enthält einen geheimen Schlüssel;
+  mit „Neuer Schlüssel“ werden alte Links ungültig.
+- **Stream Deck:** „Stream Deck & OBS“ einschalten, Link kopieren (einzelne Sounds: Rechtsklick auf den Sound →
+  „Link für Stream Deck kopieren“), im Stream Deck die Aktion **Website** nehmen und **„Im Hintergrund aufrufen“**
+  anhaken.
+- **OBS:** Link „OBS-Overlay“ kopieren und als **Browser-Quelle** (600 × 400) einfügen. Zeigt laufende Sounds,
+  Stimmeffekt und REC.
 
 ## Probleme?
 

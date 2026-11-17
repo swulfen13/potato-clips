@@ -363,6 +363,112 @@ EN_FRAGMENTS: list[tuple[str, str]] = [
     (" – Achtung: „Stimme an Discord“ ist aus", " – note: “voice to Discord” is off"),
 ]
 
+# ---------------------------------------------------------------- Neu in 1.2
+_NEW12 = {
+    # Soundboard: Ordner, Favoriten, Zufall, Zuschneiden
+    "Zufall": "Random", "Spielt einen zufälligen Sound aus der aktuellen Auswahl": "Plays a random sound from the current view",
+    "+ Ordner": "+ Folder", "Rechtsklick: umbenennen oder löschen": "Right click: rename or remove",
+    "Neuer Ordner": "New folder", "Name des Ordners:": "Folder name:", "Umbenennen…": "Rename…",
+    "Ordner auflösen (Sounds bleiben)": "Remove folder (sounds stay)", "Ordner umbenennen": "Rename folder",
+    "Neuer Name:": "New name:", "Kein Favorit mehr": "Remove from favorites", "Als Favorit": "Add to favorites",
+    "Name, Hotkey, Ordner, Sprach-Trigger…": "Name, hotkey, folder, voice trigger…", "In Ordner": "Move to folder",
+    "Aus dem Ordner nehmen": "Take out of folder", "Neuer Ordner…": "New folder…", "Zuschneiden…": "Trim…",
+    "Im Clip-Editor bearbeiten (Effekte)": "Edit in clip editor (effects)",
+    "Link für Stream Deck kopieren": "Copy link for Stream Deck", "kein Ordner": "no folder",
+    "z. B. boom  (mehrere mit Komma)": "e.g. boom  (several separated by commas)", "Sprach-Trigger": "Voice trigger",
+    "Sprach-Trigger: Sagst du das Wort, spielt der Sound (in den Einstellungen einschalten).":
+        "Voice trigger: say the word and the sound plays (turn it on in the settings).",
+    "Sound zuschneiden": "Trim sound",
+    "Grünen/roten Marker ziehen (Linksklick setzt den Anfang, Rechtsklick das Ende).":
+        "Drag the green/red markers (left click sets the start, right click the end).",
+    "Ganze Datei": "Whole file", "Keine Sounds für Zufall da": "No sounds to pick from",
+    "Sprach-Trigger gespeichert – in den Einstellungen unter „Sprach-Trigger“ einschalten":
+        "Voice trigger saved – turn it on in the settings under “Voice trigger”",
+    "Die Steuerung über Links konnte nicht gestartet werden.": "Link control could not be started.",
+    "Link kopiert – im Stream Deck bei „Website“ einfügen und „Im Hintergrund“ anhaken":
+        "Link copied – paste it into a Stream Deck “Website” action and tick “GET request in background”",
+    "Zufälliger Sound": "Random sound",
+    # Clips: Video
+    "Als Video": "As video", "MP4 mit animierter Wellenform – für TikTok, Shorts, Reels oder Discord":
+        "MP4 with an animated waveform – for TikTok, Shorts, Reels or Discord",
+    "Video wird erstellt…": "Creating video…", "Video fehlgeschlagen": "Video failed",
+    "Video fertig und kopiert – in Discord mit Strg+V einfügen": "Video done and copied – paste into Discord with Ctrl+V",
+    "Video fertig (größer als 10 MB – für Discord evtl. zu groß)": "Video done (over 10 MB – may be too big for Discord)",
+    "Clip als Video": "Clip as video", "Hochformat 9:16 (TikTok, Shorts, Reels)": "Portrait 9:16 (TikTok, Shorts, Reels)",
+    "Querformat 16:9 (YouTube)": "Landscape 16:9 (YouTube)", "Quadrat 1:1": "Square 1:1", "Profi (dunkel)": "Pro (dark)",
+    "Potato (gelb, laut)": "Potato (yellow, loud)", "Text oben": "Text on top", "Look": "Look",
+    "Der Clip ist recht lang – kürze ihn vorher, dann geht es schneller.":
+        "The clip is quite long – trim it first and it'll be faster.",
+    "Video erstellen": "Create video",
+    # Einstellungen: Auto-Clip, Soundboard
+    "Auto-Clip": "Auto clip", "Speichert von selbst einen Clip, wenn es laut wird – Schreien, Lachen, Jubel":
+        "Saves a clip by itself when it gets loud – screaming, laughing, cheering",
+    "Wenn Freunde in Discord laut werden": "When friends in Discord get loud", "Wenn ich laut werde (Mikro)":
+        "When I get loud (mic)", "Wenn irgendwas laut wird": "When anything gets loud", "Auslöser": "Trigger",
+    "Ab dieser Lautstärke": "From this volume",
+    "Rechts siehst du, wie laut es gerade ist – Schwelle etwas darüber setzen":
+        "On the right you see how loud it is right now – set the threshold a bit above",
+    "Auto-Clip an – laute Momente werden automatisch gespeichert": "Auto clip on – loud moments are saved automatically",
+    "Alle Sounds gleich laut": "All sounds equally loud",
+    "Leise Sounds werden lauter, laute leiser – die Lautstärke pro Sound gilt zusätzlich":
+        "Quiet sounds get louder, loud ones quieter – each sound's own volume still applies",
+    "Stille beim Hinzufügen abschneiden": "Trim silence when adding",
+    "Sounds starten sofort, ohne Pause am Anfang": "Sounds start right away, no gap at the beginning",
+    # Einstellungen: Handy, Stream Deck, OBS
+    "Handy & Stream Deck": "Phone & Stream Deck", "Fernbedienung": "Remote control", "Handy, Stream Deck & OBS": "Phone, Stream Deck & OBS",
+    "Handy als Fernbedienung": "Phone as remote",
+    "Handy im selben WLAN: QR-Code scannen, Soundboard im Browser – keine App nötig":
+        "Phone on the same Wi-Fi: scan the QR code, soundboard in the browser – no app needed",
+    "Mit der Handy-Kamera scannen. Fragt Windows nach der Firewall: „Private Netzwerke“ erlauben.":
+        "Scan with your phone camera. If Windows asks about the firewall: allow “Private networks”.",
+    "Der Link enthält einen geheimen Schlüssel – nur an Leute geben, die dein Soundboard steuern dürfen.":
+        "The link contains a secret key – only share it with people who may control your soundboard.",
+    "Link kopieren": "Copy link", "Neuer Schlüssel": "New key",
+    "Alte Links und QR-Codes funktionieren danach nicht mehr": "Old links and QR codes stop working",
+    "Stream Deck & OBS": "Stream Deck & OBS",
+    "Links, mit denen Stream Deck, OBS oder andere Programme auf diesem PC Potato Clips steuern":
+        "Links that let Stream Deck, OBS or other programs on this PC control Potato Clips",
+    "Stimmeffekt an/aus": "Voice effect on/off", "OBS-Overlay (Browser-Quelle)": "OBS overlay (browser source)",
+    "Stream Deck: Aktion „Website“ → Link einfügen → „Im Hintergrund aufrufen“ anhaken.":
+        "Stream Deck: “Website” action → paste the link → tick “GET request in background”.",
+    "Einzelne Sounds: im Soundboard Rechtsklick auf den Sound → „Link für Stream Deck kopieren“.":
+        "Single sounds: right click the sound on the soundboard → “Copy link for Stream Deck”.",
+    "OBS: Quelle „Browser“ → Link einfügen, Breite 600, Höhe 400 – zeigt laufende Sounds, Stimmeffekt und REC.":
+        "OBS: “Browser” source → paste the link, width 600, height 400 – shows playing sounds, voice effect and REC.",
+    "Erst oben einschalten": "Turn it on above first", "Link kopiert": "Link copied",
+    "Neuer Schlüssel – alte Links funktionieren nicht mehr": "New key – old links no longer work",
+    # Einstellungen: Sprach-Trigger
+    "Sagst du ein bestimmtes Wort, spielt der passende Sound – die Erkennung läuft komplett auf deinem PC":
+        "Say a certain word and the matching sound plays – recognition runs entirely on your PC",
+    "Wie die Oberfläche": "Same as the interface", "Sprache, die erkannt wird": "Language to recognize",
+    "Sprachpaket laden": "Download language pack", "Sprachpaket": "Language pack",
+    "Wird einmal heruntergeladen (ca. 45 MB)": "Downloaded once (about 45 MB)", "Gerade gehört": "Just heard",
+    "Sprich zum Testen – hier steht, was erkannt wurde": "Talk to test it – this shows what was recognized",
+    "Deine Trigger": "Your triggers",
+    "Wort festlegen: im Soundboard Rechtsklick auf einen Sound → „Name, Hotkey, Ordner, Sprach-Trigger…“. Kurze, eindeutige Wörter klappen am besten.":
+        "Set a word: right click a sound on the soundboard → “Name, hotkey, folder, voice trigger…”. Short, distinct words work best.",
+    "Installiert ✓": "Installed ✓", "Noch keine – Rechtsklick auf einen Sound": "None yet – right click a sound",
+    "aus": "off", "wartet auf das Sprachpaket": "waiting for the language pack", "hört zu …": "listening …",
+    "Sprachpaket installiert": "Language pack installed",
+}
+for _k, _v in _NEW12.items():
+    EN[_k] = _v
+    EN.setdefault(_k.rstrip(" :…—"), _v.rstrip(" :…—"))     # tr() trennt "…" und ":" am Ende ab
+EN_PATTERNS += [(re.compile(a), b) for a, b in [
+    (r"^(.+)\nLinksklick: abspielen · Rechtsklick: Optionen\nSprach-Trigger: „(.+)“$",
+     r"\1\nLeft click: play · right click: options\nVoice trigger: “\2”"),
+    (r"^Alle \((\d+)\)$", r"All (\1)"),
+    (r"^★ Favoriten \((\d+)\)$", r"★ Favorites (\1)"),
+    (r"^Favoriten \((\d+)\)$", r"Favorites (\1)"),
+    (r"^Sprach-Trigger: „(.+)“$", r"Voice trigger: “\1”"),
+    (r"^Auto-Clip gespeichert \(([\d.]+)s\): (.+)$", r"Auto clip saved (\1s): \2"),
+    (r"^gerade: still$", r"now: quiet"),
+    (r"^gerade: (.+)$", r"now: \1"),
+    (r"^⚠ Konnte nicht gestartet werden: (.+)$", r"⚠ Could not be started: \1"),
+    (r"^Sprachpaket-Download fehlgeschlagen: (.+)$", r"Language pack download failed: \1"),
+    (r"^Auto-Clip (\d\d\.\d\d\. \d\d:\d\d(:\d\d)?)$", r"Auto clip \1"),
+]]
+
 # ---------------------------------------------------------------- Potato-Modus (Texte ueber der Sprache)
 POT_DE: dict[str, str] = {
     "Soundboard": "Knöpfe", "Stimme verändern": "Stimme kaputtmachen", "Clips && Editor": "Beweise", "Clips & Editor": "Beweise",
@@ -442,6 +548,11 @@ POT_EN: dict[str, str] = {
 
 # Dekorative Emoji/Symbole am Anfang, die im Profi-Design wegfallen (funktionale Zeichen bleiben)
 _PREFIX_RE = re.compile(r"^([^\w„\"“<(\[{]*)(.*?)([\s:…—]*)$", re.S)
+POT_DE.update({"Zufall": "Glücksrad", "Als Video": "Ab auf TikTok", "Auto-Clip": "Auto-Petze",
+               "Handy als Fernbedienung": "Fernbedienung (das Handy)", "Sprachpaket laden": "Gehirn runterladen"})
+POT_EN.update({"Random": "Spin the wheel", "As video": "Send to TikTok", "Auto clip": "Auto snitch",
+               "Phone as remote": "Remote control (it's your phone)", "Download language pack": "Download a brain"})
+
 _KEEP = set("●■▶←→⚠+−✕×♪—–·✓")
 
 

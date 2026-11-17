@@ -37,7 +37,9 @@ t = np.arange(int(48000 * 1.5)) / 48000
 tone = (0.2 * np.sin(2 * np.pi * 440 * t) * np.exp(-t * 2))[:, None].repeat(2, 1).astype("float32")
 s1 = ctl.sounds.add_array("Test Airhorn", tone)
 s2 = ctl.sounds.add_array("Bruh", tone * 0.5)
-ctl.sounds.update(s1["id"], hotkey="ctrl+alt+1")
+ctl.sounds.update(s1["id"], hotkey="ctrl+alt+1", fav=True, folder="Memes")
+ctl.sounds.update(s2["id"], trigger="bruh", folder="Reaktionen")
+ctl.cfg["sound_folders"] = ["Memes", "Reaktionen"]
 ctl.soundsChanged.emit()
 player = subprocess.Popen([sys.executable, "-c",
     _testenv.PLAYER_PRELUDE + "import numpy as np\n"
@@ -105,6 +107,47 @@ def german_leftovers():
     return sorted(found)
 
 
+new_checks = {}
+
+
+def remote_test():
+    """Stream-Deck-Links gegen den echten Controller (Server nur auf 127.0.0.1)."""
+    import json, urllib.request
+    ctl.cfg.update(api_enabled=True, remote_enabled=False, remote_port=18766)
+    ctl.remote.sync()
+    new_checks["server lokal"] = ctl.remote.running and ctl.remote.host == "127.0.0.1"
+    st = json.loads(urllib.request.urlopen(ctl.remote.local_url("/api/state"), timeout=5).read())
+    new_checks["status"] = [x["name"] for x in st["sounds"]][:1] == ["Test Airhorn"] and "Memes" in st["folders"]
+    urllib.request.urlopen(ctl.remote.local_url(f"/api/play/{s2['id']}"), timeout=5).read()
+    urllib.request.urlopen(ctl.remote.local_url("/api/random?folder=Memes"), timeout=5).read()
+
+
+def remote_check():
+    ids = {v.sound_id for v in ctl.mixer.playing()}
+    new_checks["Befehle ausgefuehrt"] = s2["id"] in ids and s1["id"] in ids
+    print("Neue Funktionen:", new_checks)
+
+
+dialogs = []
+
+
+def dialog_shots():
+    from soundclip.ui.soundboard_tab import SoundDialog, TrimDialog
+    from soundclip.ui.clips_tab import VideoDialog
+    from soundclip.ui.settings_tab import QrView
+    for name, d in (("7a_sound_dialog", SoundDialog(ctl.sounds.get(s2["id"]), win.soundboard, ctl.sounds.folders())),
+                    ("7b_zuschneiden", TrimDialog(ctl, ctl.sounds.get(s1["id"]), win.soundboard)),
+                    ("7c_video_dialog", VideoDialog(ctl, "Clip 17.11. 12:00:00", 12.0, win.clips))):
+        d.show()
+        app.processEvents()
+        d.grab().save(os.path.join(OUT, name + ".png"))
+        d.hide()
+        dialogs.append(d)
+    q = QrView()
+    q.set_text("http://192.168.178.20:8765/?t=abcdefghijklmnop")
+    q.grab().save(os.path.join(OUT, "7d_qr.png"))
+
+
 def finish():
     print("Quellen:", [(k, s.status) for k, s in ctl.sources.sources.items()])
     print("Ausgaben:", ctl.mixer.devices, ctl.mixer.errors, {t: ctl.mixer.is_open(t) for t in ("monitor", "virtual")})
@@ -125,6 +168,13 @@ def finish():
     win.quit()
 
 step(3500, shot("1_soundboard"))
+step(100, lambda: win.soundboard._set_folder("*fav"))
+step(500, shot("1b_soundboard_favoriten"))
+step(100, lambda: win.soundboard._set_folder(""))
+step(100, remote_test)
+step(400, remote_check)
+step(100, lambda: ctl.mixer.stop_all())
+step(100, dialog_shots)
 step(500, lambda: win.tabs.setCurrentWidget(win.sources))
 step(1200, shot("3_quellen"))
 step(100, rec_start)
@@ -145,6 +195,14 @@ step(100, lambda: win.settings._goto("discord"))
 step(500, shot("4b_einstellungen_discord"))
 step(100, lambda: win.settings._goto("hotkeys"))
 step(500, shot("4c_einstellungen_hotkeys"))
+step(100, lambda: win.settings._goto("clips"))
+step(500, shot("4d_einstellungen_clips"))
+step(100, lambda: win.settings._goto("soundboard"))
+step(500, shot("4e_einstellungen_soundboard"))
+step(100, lambda: win.settings._goto("fernbedienung"))
+step(500, shot("4f_einstellungen_fernbedienung"))
+step(100, lambda: win.settings._goto("trigger"))
+step(500, shot("4g_einstellungen_trigger"))
 step(100, overlay_shot)
 step(1200, finish)
 

@@ -5,7 +5,7 @@ import subprocess
 
 import soundfile as sf
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
+from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
                                QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QScrollArea,
                                QSlider, QSplitter, QToolButton, QVBoxLayout, QWidget, QCheckBox)
 
@@ -165,19 +165,26 @@ class ClipsTab(QWidget):
         self.b_share = QPushButton("📋 Für Discord kopieren")
         self.b_share.setToolTip("Als MP3 in die Zwischenablage – in Discord mit Strg+V einfügen")
         self.b_share.clicked.connect(self._share)
+        self.b_video = QPushButton("🎬 Als Video")
+        self.b_video.setToolTip("MP4 mit animierter Wellenform – für TikTok, Shorts, Reels oder Discord")
+        self.b_video.clicked.connect(self._video)
         for b in (self.b_prev, self.b_play, self.b_stop):
             act.addWidget(b)
         act.addStretch(1)
-        act.addWidget(self.b_share)
-        act.addWidget(self.b_export)
-        act.addWidget(self.b_sound)
         rl.addLayout(act)
+        act2 = QHBoxLayout()
+        act2.addWidget(self.b_share)
+        act2.addWidget(self.b_video)
+        act2.addWidget(self.b_export)
+        act2.addStretch(1)
+        act2.addWidget(self.b_sound)
+        rl.addLayout(act2)
         rl.addStretch(1)
         split.addWidget(right)
         split.setSizes([300, 800])
 
         self.editor_widgets = [self.name, self.wave, self.fx_combo, b_add, self.b_prev, self.b_play,
-                               self.b_stop, self.b_sound, self.b_export, self.b_share, b_reset, b_last5, b_last10, b_auto]
+                               self.b_stop, self.b_sound, self.b_export, self.b_share, self.b_video, b_reset, b_last5, b_last10, b_auto]
         self._enable(False)
         ctl.clipsChanged.connect(self._on_new_clip)
         self.reload()
@@ -535,6 +542,62 @@ class ClipsTab(QWidget):
             return
         self.ctl._copy_share(str(path))
 
+    def _video(self):
+        data = self._rendered()
+        if data is None or not len(data):
+            self.ctl.toast.emit("Nichts zu hören – ist mindestens eine Quelle aktiv?", "warn")
+            return
+        dlg = VideoDialog(self.ctl, self.meta["name"], len(data) / SR, self)
+        if not dlg.exec():
+            return
+        fmt, title, style = dlg.values()
+        self.ctl.cfg["video_format"] = fmt
+        from ..capture import safe_name
+        from .. import video
+        import threading
+        out = str(EXPORT_DIR / f"{safe_name(self.meta['name'])}_{_dt.datetime.now().strftime('%H%M%S')}.mp4")
+        from PySide6.QtWidgets import QProgressDialog
+        prog = QProgressDialog("Video wird erstellt…", "Abbrechen", 0, 100, self)
+        prog.setWindowTitle("Als Video")
+        prog.setWindowModality(Qt.WindowModal)
+        prog.setMinimumDuration(0)
+        prog.setValue(0)
+        cancel = threading.Event()
+        state = {"p": 0.0, "done": False, "err": None}
+
+        def work():
+            try:
+                video.render_video(data, out, title, fmt, style, progress=lambda v: state.__setitem__("p", v),
+                                   cancel=cancel)
+            except Exception as e:
+                state["err"] = str(e)
+            state["done"] = True
+        threading.Thread(target=work, daemon=True).start()
+
+        def poll():
+            if prog.wasCanceled():
+                cancel.set()
+            prog.setValue(int(state["p"] * 100))
+            if not state["done"]:
+                return
+            timer.stop()
+            prog.close()
+            if state["err"]:
+                if not cancel.is_set():
+                    QMessageBox.warning(self, "Video fehlgeschlagen", state["err"])
+                return
+            from ..share import copy_file, too_big
+            copy_file(out)
+            msg = "🎬 Video fertig und kopiert – in Discord mit Strg+V einfügen"
+            if too_big(out):
+                msg = "🎬 Video fertig (größer als 10 MB – für Discord evtl. zu groß)"
+            self.ctl.toast.emit(msg, "ok")
+            subprocess.Popen(["explorer", "/select,", out.replace("/", "\\")])
+        timer = QTimer(self)
+        timer.timeout.connect(poll)
+        timer.start(100)
+        self._video_timer = timer
+
     def _export(self):
         data = self._rendered()
         if data is None or not len(data):
@@ -553,3 +616,42 @@ class ClipsTab(QWidget):
 
     def shutdown(self):
         self._flush()
+
+
+class VideoDialog(QDialog):
+    """Einstellungen fuer den Video-Export."""
+
+    def __init__(self, ctl, name: str, seconds: float, parent=None):
+        super().__init__(parent)
+        from . import theme
+        self.setWindowTitle("Clip als Video")
+        self.setMinimumWidth(460)
+        lay = QFormLayout(self)
+        self.fmt = QComboBox()
+        for k, t in (("9:16", "Hochformat 9:16 (TikTok, Shorts, Reels)"), ("16:9", "Querformat 16:9 (YouTube)"),
+                     ("1:1", "Quadrat 1:1")):
+            self.fmt.addItem(t, k)
+        self.fmt.setCurrentIndex(max(0, self.fmt.findData(ctl.cfg["video_format"])))
+        self.title = QLineEdit(name)
+        self.title.setMaxLength(80)
+        self.style = QComboBox()
+        self.style.addItem("Profi (dunkel)", "pro")
+        self.style.addItem("Potato (gelb, laut)", "potato")
+        self.style.setCurrentIndex(1 if theme.potato() else 0)
+        lay.addRow("Format", self.fmt)
+        lay.addRow("Text oben", self.title)
+        lay.addRow("Look", self.style)
+        if seconds > 180:
+            warn = QLabel("Der Clip ist recht lang – kürze ihn vorher, dann geht es schneller.")
+            warn.setObjectName("muted")
+            warn.setWordWrap(True)
+            lay.addRow(warn)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.button(QDialogButtonBox.Ok).setText("Video erstellen")
+        bb.button(QDialogButtonBox.Cancel).setText("Abbrechen")
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        lay.addRow(bb)
+
+    def values(self):
+        return self.fmt.currentData(), self.title.text().strip(), self.style.currentData()

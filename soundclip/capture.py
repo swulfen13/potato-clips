@@ -513,6 +513,7 @@ class SourceManager:
         self._thread: threading.Thread | None = None
         self.helper_ok = HELPER.exists()
         self.sessions: list[dict] = []
+        self.listeners: list = []             # weitere Abnehmer der Audio-Bloecke (Auto-Clip, Sprach-Trigger)
 
     # ---------------------------------------------------------- Lebenszyklus
     def start(self):
@@ -666,6 +667,9 @@ class SourceManager:
         if self.cfg["mic_passthrough"] or self.cfg["voice_monitor"]:
             keys.add("mic")
         keys |= set((self.cfg["route_sources"] or {}).keys())
+        if self.cfg.get("triggers_enabled") or (self.cfg.get("autoclip_enabled")
+                                                and self.cfg.get("autoclip_source") == "mic"):
+            keys.add("mic")
         return keys & avail
 
     def reconcile(self):
@@ -705,6 +709,11 @@ class SourceManager:
             self.mixer.feed_route(src.key, data)
         if src.key == "mic" and self.mixer is not None and self.mixer.wants_mic():
             self.mixer.feed_live(data)
+        for fn in self.listeners:
+            try:
+                fn(src.key, data)
+            except Exception:
+                log.exception("Audio-Abnehmer")
 
     # ---------------------------------------------------------- Clips
     def snapshot(self):

@@ -5,3 +5,6 @@ soundfile>=0.12
 keyboard>=0.13.5
 psutil>=5.9
 pyrnnoise>=0.4      # liefert rnnoise.dll (KI-Rauschfilter)
+vosk>=0.3.45         # Sprach-Trigger (offline)
+qrcode>=7.4          # QR-Code fuer die Handy-Fernbedienung
+imageio-ffmpeg>=0.5   # ffmpeg fuer den Video-Export

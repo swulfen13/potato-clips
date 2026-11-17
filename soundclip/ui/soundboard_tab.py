@@ -26,7 +26,10 @@ class SoundTile(QFrame):
         self.progress = -1.0
         self.setFixedSize(196, 112) if theme.potato() else self.setFixedSize(184, 96)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip(f"{sound['name']}\nLinksklick: abspielen · Rechtsklick: Optionen")
+        tip = f"{sound['name']}\nLinksklick: abspielen · Rechtsklick: Optionen"
+        if sound.get("trigger"):
+            tip += f"\nSprach-Trigger: „{sound['trigger']}“"
+        self.setToolTip(tip)
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.LeftButton and self.rect().contains(e.position().toPoint()):
@@ -106,11 +109,13 @@ class SoundTile(QFrame):
             f = QFont("Bungee")
             f.setPointSizeF(9.5)
             name = self.sound["name"].upper()
+            if self.sound.get("fav"):
+                name = "★ " + name
         else:
             f = QFont(self.font())
             f.setPointSizeF(10.5)
             f.setBold(True)
-            name = self.sound["name"]
+            name = ("★ " if self.sound.get("fav") else "") + self.sound["name"]
         p.setFont(f)
         p.setPen(QColor(P["text"]))
         p.drawText(r.adjusted(12, 10, -44, -30), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, name)
@@ -138,12 +143,17 @@ class SoundTile(QFrame):
             p.setPen(QColor(P["muted"]))
             p.drawText(r.adjusted(12 if pot else 28, 0, -10, -9), Qt.AlignLeft | Qt.AlignBottom, tr("kein Hotkey"))
         vol = float(self.sound.get("volume", 1.0))
+        extra = []
+        if self.sound.get("trigger"):
+            extra.append("🗣")
         if abs(vol - 1.0) > 0.01:
+            extra.append(f"{int(vol * 100)}%")
+        if extra:
             p.setPen(QColor(P["muted"]))
-            p.drawText(r.adjusted(14, 0, -12, -9), Qt.AlignRight | Qt.AlignBottom, f"{int(vol * 100)}%")
+            p.drawText(r.adjusted(14, 0, -12, -9), Qt.AlignRight | Qt.AlignBottom, " ".join(extra))
 
 class SoundDialog(QDialog):
-    def __init__(self, sound: dict, parent=None):
+    def __init__(self, sound: dict, parent=None, folders=()):
         super().__init__(parent)
         self.setWindowTitle("Sound bearbeiten")
         self.setMinimumWidth(420)
@@ -163,16 +173,29 @@ class SoundDialog(QDialog):
         self.color_btn = QPushButton("Farbe wählen")
         self.color_btn.setStyleSheet(f"background:{self.color}")
         self.color_btn.clicked.connect(self._pick)
+        self.folder = QComboBox()
+        self.folder.setEditable(True)
+        self.folder.addItem("")
+        for f in folders:
+            self.folder.addItem(f)
+        self.folder.setCurrentText(sound.get("folder", ""))
+        self.folder.lineEdit().setPlaceholderText("kein Ordner")
+        self.trigger = QLineEdit(sound.get("trigger", ""))
+        self.trigger.setPlaceholderText("z. B. boom  (mehrere mit Komma)")
         lay.addRow("Name", self.name)
         lay.addRow("Hotkey", self.hotkey)
         lay.addRow("Lautstärke", vrow)
         lay.addRow("Farbe", self.color_btn)
-        hint = QLabel("Tipp: Hotkeys funktionieren global – auch im Spiel.")
+        lay.addRow("Ordner", self.folder)
+        lay.addRow("Sprach-Trigger", self.trigger)
+        hint = QLabel("Tipp: Hotkeys funktionieren global – auch im Spiel.\n"
+                      "Sprach-Trigger: Sagst du das Wort, spielt der Sound (in den Einstellungen einschalten).")
         hint.setObjectName("muted")
         lay.addRow(hint)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
+        bb.button(QDialogButtonBox.Cancel).setText("Abbrechen")
         lay.addRow(bb)
 
     def _pick(self):
@@ -183,7 +206,78 @@ class SoundDialog(QDialog):
 
     def values(self) -> dict:
         return {"name": self.name.text().strip() or "Sound", "hotkey": self.hotkey.combo(),
-                "volume": self.vol.value() / 100.0, "color": self.color}
+                "volume": self.vol.value() / 100.0, "color": self.color,
+                "folder": self.folder.currentText().strip()[:40], "trigger": self.trigger.text().strip()[:80]}
+
+
+class TrimDialog(QDialog):
+    """Anfang und Ende eines Sounds festlegen (die Datei bleibt unverändert)."""
+
+    def __init__(self, ctl, sound: dict, parent=None):
+        super().__init__(parent)
+        from .widgets import WaveformView
+        from ..config import SR
+        self.ctl = ctl
+        self.sound = sound
+        self.setWindowTitle("Sound zuschneiden")
+        self.setMinimumWidth(640)
+        self.data = ctl.sounds.audio_raw(sound)
+        self.dur = len(self.data) / SR
+        lay = QVBoxLayout(self)
+        info = QLabel("Grünen/roten Marker ziehen (Linksklick setzt den Anfang, Rechtsklick das Ende).")
+        info.setObjectName("muted")
+        info.setWordWrap(True)
+        lay.addWidget(info)
+        self.wave = WaveformView()
+        self.wave.setMinimumHeight(150)
+        self.wave.set_audio(self.data, self.dur)
+        t = sound.get("trim") or [0.0, self.dur]
+        self.wave.set_range(float(t[0]), min(float(t[1]), self.dur))
+        self.wave.rangeChanged.connect(lambda *_: self._label())
+        lay.addWidget(self.wave)
+        self.lbl = QLabel()
+        lay.addWidget(self.lbl)
+        row = QHBoxLayout()
+        b_play = QPushButton("▶ Vorhören")
+        b_play.clicked.connect(self._preview)
+        b_stop = QPushButton("■")
+        b_stop.clicked.connect(lambda: ctl.mixer.stop("__preview__"))
+        b_auto = QPushButton("Stille abschneiden")
+        b_auto.clicked.connect(self._auto)
+        b_reset = QPushButton("Ganze Datei")
+        b_reset.clicked.connect(lambda: (self.wave.set_range(0.0, self.dur), self._label()))
+        for b in (b_play, b_stop, b_auto, b_reset):
+            row.addWidget(b)
+        row.addStretch(1)
+        lay.addLayout(row)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        bb.button(QDialogButtonBox.Cancel).setText("Abbrechen")
+        lay.addWidget(bb)
+        self._label()
+
+    def _label(self):
+        a, b = self.wave.start, self.wave.end
+        self.lbl.setText(f"{a:.2f} s – {b:.2f} s  ({b - a:.2f} s)")
+
+    def _auto(self):
+        from ..loudness import silence_bounds
+        bnd = silence_bounds(self.data)
+        if bnd:
+            self.wave.set_range(*bnd)
+        self._label()
+
+    def _preview(self):
+        from ..config import SR
+        a, b = int(self.wave.start * SR), int(self.wave.end * SR)
+        self.ctl.play_data(self.data[a:b], self.sound["name"])
+
+    def trim(self):
+        a, b = self.wave.start, self.wave.end
+        if a < 0.01 and b > self.dur - 0.01:
+            return None
+        return [a, b]
 
 
 class SoundboardTab(QWidget):
@@ -195,6 +289,7 @@ class SoundboardTab(QWidget):
         self.setObjectName("page")
         self.setAcceptDrops(True)
         self.tiles: dict[str, SoundTile] = {}
+        self.cur_folder = ""          # "" = alle, "*fav" = Favoriten, sonst Ordnername
 
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 22, 28, 20)
@@ -220,6 +315,10 @@ class SoundboardTab(QWidget):
         pm.addAction("Sound-Pack importieren…", self._import_pack_dialog)
         share.setMenu(pm)
         top.addWidget(share)
+        rnd = QPushButton("🎲 Zufall")
+        rnd.setToolTip("Spielt einen zufälligen Sound aus der aktuellen Auswahl")
+        rnd.clicked.connect(lambda: ctl.play_random(self.cur_folder))
+        top.addWidget(rnd)
         stop = QPushButton("■ Alle stoppen")
         stop.clicked.connect(ctl.stop_all)
         if theme.potato():
@@ -283,6 +382,11 @@ class SoundboardTab(QWidget):
         root.addWidget(tts)
         QTimer.singleShot(1500, self._load_voices)
 
+        self.folder_bar = QWidget()
+        self.folder_flow = FlowLayout(self.folder_bar, 8)
+        self.folder_flow.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(self.folder_bar)
+
         self.status = QLabel()
         self.status.setObjectName("muted")
         self.status.setWordWrap(True)
@@ -318,13 +422,87 @@ class SoundboardTab(QWidget):
         self.master.setValue(int(self.ctl.cfg["master_volume"] * 100))
         self.master.blockSignals(False)
 
+    # ---- Ordner
+    def _folders(self) -> list[str]:
+        return self.ctl.sounds.folders(self.ctl.cfg["sound_folders"] or [])
+
+    def _build_folder_bar(self):
+        while self.folder_flow.count():
+            it = self.folder_flow.takeAt(0)
+            if it and it.widget():
+                it.widget().deleteLater()
+        sounds = self.ctl.sounds.sounds
+        folders = self._folders()
+        if self.cur_folder not in ("", "*fav") and self.cur_folder not in folders:
+            self.cur_folder = ""
+        items = [("", f"Alle ({len(sounds)})"), ("*fav", f"★ Favoriten ({sum(1 for s in sounds if s.get('fav'))})")]
+        items += [(f, f"{f} ({sum(1 for s in sounds if s.get('folder', '') == f)})") for f in folders]
+        for key, text in items:
+            b = QPushButton(text.replace("&", "&&"))
+            b.setObjectName("seg")
+            b.setCheckable(True)
+            b.setChecked(key == self.cur_folder)
+            b.setCursor(Qt.PointingHandCursor)
+            b.clicked.connect(lambda _=False, k=key: self._set_folder(k))
+            if key not in ("", "*fav"):
+                b.setContextMenuPolicy(Qt.CustomContextMenu)
+                b.customContextMenuRequested.connect(lambda pos, k=key, w=b: self._folder_menu(k, w.mapToGlobal(pos)))
+                b.setToolTip("Rechtsklick: umbenennen oder löschen")
+            self.folder_flow.addWidget(b)
+        add = QPushButton("+ Ordner")
+        add.setCursor(Qt.PointingHandCursor)
+        add.clicked.connect(self._new_folder)
+        self.folder_flow.addWidget(add)
+
+    def _set_folder(self, key):
+        self.cur_folder = key
+        self._build_folder_bar()
+        self._filter(self.search.text())
+
+    def _new_folder(self, sid=None):
+        name, ok = QInputDialog.getText(self, "Neuer Ordner", "Name des Ordners:")
+        name = name.strip()[:40]
+        if not ok or not name:
+            return None
+        fl = list(self.ctl.cfg["sound_folders"] or [])
+        if name not in fl:
+            fl.append(name)
+            self.ctl.cfg["sound_folders"] = fl
+        if sid:
+            self.ctl.sounds.update(sid, folder=name)
+        self.refresh()
+        return name
+
+    def _folder_menu(self, key, pos):
+        m = QMenu(self)
+        a_ren = m.addAction("Umbenennen…")
+        a_del = m.addAction("Ordner auflösen (Sounds bleiben)")
+        act = m.exec(pos)
+        fl = list(self.ctl.cfg["sound_folders"] or [])
+        if act == a_ren:
+            new, ok = QInputDialog.getText(self, "Ordner umbenennen", "Neuer Name:", text=key)
+            new = new.strip()[:40]
+            if ok and new and new != key:
+                self.ctl.sounds.rename_folder(key, new)
+                self.ctl.cfg["sound_folders"] = [new if f == key else f for f in fl]
+                if self.cur_folder == key:
+                    self.cur_folder = new
+                self.refresh()
+        elif act == a_del:
+            self.ctl.sounds.rename_folder(key, "")
+            self.ctl.cfg["sound_folders"] = [f for f in fl if f != key]
+            if self.cur_folder == key:
+                self.cur_folder = ""
+            self.refresh()
+
     def refresh(self):
         while self.flow.count():
             it = self.flow.takeAt(0)
             if it and it.widget():
                 it.widget().deleteLater()
         self.tiles = {}
-        for s in self.ctl.sounds.sounds:
+        self._build_folder_bar()
+        for s in sorted(self.ctl.sounds.sounds, key=lambda x: not x.get("fav")):
             t = SoundTile(s)
             t.clicked.connect(self.ctl.play_sound)
             t.menuRequested.connect(self._menu)
@@ -336,8 +514,13 @@ class SoundboardTab(QWidget):
 
     def _filter(self, text):
         text = text.lower().strip()
+        cur = self.cur_folder
         for sid, t in self.tiles.items():
-            t.setVisible(not text or text in t.sound["name"].lower())
+            s = t.sound
+            in_folder = not cur or (cur == "*fav" and s.get("fav")) or s.get("folder", "") == cur
+            hit = not text or text in s["name"].lower() or text in s.get("folder", "").lower() \
+                or text in str(s.get("trigger", "")).lower()
+            t.setVisible(bool(in_folder and hit))
         self.inner.updateGeometry()
 
     def _tick(self):
@@ -368,7 +551,8 @@ class SoundboardTab(QWidget):
         n = 0
         for f in files:
             try:
-                if self.ctl.sounds.add_file(f):
+                folder = self.cur_folder if self.cur_folder not in ("", "*fav") else ""
+                if self.ctl.sounds.add_file(f, auto_trim=bool(self.ctl.cfg["auto_trim"]), folder=folder):
                     n += 1
                 else:
                     bad.append(os.path.basename(f))
@@ -527,6 +711,20 @@ class SoundboardTab(QWidget):
         else:
             self.ctl.mixer.play(data, sound_id="__tts__", name=text[:40])
 
+    def _copy_link(self, sid):
+        from PySide6.QtWidgets import QApplication
+        r = self.ctl.remote
+        if not r.running:
+            self.ctl.cfg["api_enabled"] = True
+            r.sync()
+            self.ctl.settingsChanged.emit()
+        if not r.running:
+            QMessageBox.warning(self, "Fehler", "Die Steuerung über Links konnte nicht gestartet werden.")
+            return
+        QApplication.clipboard().setText(r.local_url(f"/api/play/{sid}"))
+        self.ctl.toast.emit("🔗 Link kopiert – im Stream Deck bei „Website“ einfügen und „Im Hintergrund“ anhaken",
+                            "ok")
+
     def _menu(self, sid, pos):
         s = self.ctl.sounds.get(sid)
         if not s:
@@ -535,8 +733,20 @@ class SoundboardTab(QWidget):
         a_play = m.addAction("▶ Abspielen")
         a_prev = m.addAction("🎧 Nur für mich vorhören")
         m.addSeparator()
-        a_edit = m.addAction("✎ Name, Hotkey, Lautstärke, Farbe…")
-        a_fx = m.addAction("✂ Im Clip-Editor bearbeiten (Schneiden/Effekte)")
+        a_fav = m.addAction("☆ Kein Favorit mehr" if s.get("fav") else "★ Als Favorit")
+        a_edit = m.addAction("✎ Name, Hotkey, Ordner, Sprach-Trigger…")
+        fm = m.addMenu("📁 In Ordner")
+        f_acts = {}
+        for f in self._folders():
+            a = fm.addAction(("✓ " if s.get("folder", "") == f else "") + f)
+            f_acts[a] = f
+        if s.get("folder"):
+            f_acts[fm.addAction("Aus dem Ordner nehmen")] = ""
+        fm.addSeparator()
+        a_newf = fm.addAction("+ Neuer Ordner…")
+        a_trim = m.addAction("✂ Zuschneiden…")
+        a_fx = m.addAction("Im Clip-Editor bearbeiten (Effekte)")
+        a_link = m.addAction("🔗 Link für Stream Deck kopieren")
         m.addSeparator()
         a_left = m.addAction("← Nach vorne")
         a_right = m.addAction("→ Nach hinten")
@@ -549,12 +759,38 @@ class SoundboardTab(QWidget):
             self.ctl.play_sound(sid)
         elif act == a_prev:
             self.ctl.play_data(self.ctl.sounds.audio(s), s["name"])
-        elif act == a_edit:
-            dlg = SoundDialog(s, self)
+        elif act == a_fav:
+            self.ctl.sounds.update(sid, fav=not s.get("fav"))
+            self.refresh()
+        elif act in f_acts:
+            self.ctl.sounds.update(sid, folder=f_acts[act])
+            self.refresh()
+        elif act == a_newf:
+            self._new_folder(sid)
+        elif act == a_trim:
+            try:
+                dlg = TrimDialog(self.ctl, s, self)
+            except Exception as e:
+                QMessageBox.warning(self, "Fehler", str(e))
+                return
             if dlg.exec():
-                self.ctl.sounds.update(sid, **dlg.values())
+                self.ctl.sounds.set_trim(sid, dlg.trim())
+                self.refresh()
+            self.ctl.mixer.stop("__preview__")
+        elif act == a_link:
+            self._copy_link(sid)
+        elif act == a_edit:
+            dlg = SoundDialog(s, self, self._folders())
+            if dlg.exec():
+                vals = dlg.values()
+                self.ctl.sounds.update(sid, **vals)
+                if vals["folder"] and vals["folder"] not in (self.ctl.cfg["sound_folders"] or []):
+                    self.ctl.cfg["sound_folders"] = list(self.ctl.cfg["sound_folders"] or []) + [vals["folder"]]
                 self.ctl.apply_hotkeys()
                 self.refresh()
+                if vals["trigger"] and not self.ctl.cfg["triggers_enabled"]:
+                    self.ctl.toast.emit("Sprach-Trigger gespeichert – in den Einstellungen unter „Sprach-Trigger“ einschalten",
+                                        "info")
         elif act == a_fx:
             self.openInEditor.emit(sid)
         elif act in (a_left, a_right):

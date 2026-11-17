@@ -587,10 +587,6 @@ class HotkeyEdit(QWidget):
         except Exception:
             pass
         self.edit.setToolTip("Hier klicken und Tastenkombination drücken")
-        from PySide6.QtWidgets import QLineEdit
-        le = self.edit.findChild(QLineEdit)
-        if le is not None:
-            le.setPlaceholderText("Klicken und Tasten drücken…")
         self.clear_btn = QToolButton()
         self.clear_btn.setText("✕")
         self.clear_btn.setToolTip("Hotkey entfernen")
@@ -598,17 +594,27 @@ class HotkeyEdit(QWidget):
         lay.addWidget(self.clear_btn)
         self.set_combo(combo)
         self.edit.editingFinished.connect(self._emit)
-        self.clear_btn.clicked.connect(lambda: (self.edit.clear(), self._emit()))
+        self.clear_btn.clicked.connect(lambda: (self.edit.clear(), self._placeholder(), self._emit()))
+
+    def _placeholder(self):
+        """Qt setzt beim Leeren wieder sein englisches 'Press shortcut' - unseren Text erneut setzen."""
+        from PySide6.QtWidgets import QLineEdit
+        from ..i18n import tr
+        le = self.edit.findChild(QLineEdit)
+        if le is not None:
+            le.setPlaceholderText(tr("Klicken und Tasten drücken…"))
 
     def set_combo(self, combo: str):
         self.edit.blockSignals(True)
         self.edit.setKeySequence(QKeySequence(combo_to_qt(combo)))
         self.edit.blockSignals(False)
+        self._placeholder()
 
     def combo(self) -> str:
         return qt_to_combo(self.edit.keySequence().toString(QKeySequence.PortableText))
 
     def _emit(self):
+        self._placeholder()
         self.changed.emit(self.combo())
 
 

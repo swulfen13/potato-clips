@@ -81,6 +81,26 @@ DEFAULTS: dict = {
     "clip_autocopy": False,           # neue Clips sofort als MP3 in die Zwischenablage
     "update_check": True,             # beim Start nach Updates schauen
     "last_update_check": 0,
+    # Soundboard
+    "normalize_sounds": True,         # alle Sounds ungefaehr gleich laut
+    "auto_trim": True,                # Stille vorne/hinten beim Import abschneiden
+    "sound_folders": [],              # Reihenfolge der Ordner (auch leere)
+    # Fernbedienung / Stream Deck / OBS
+    "remote_enabled": False,          # Handy im WLAN
+    "api_enabled": False,             # Links fuer Stream Deck / OBS (nur dieser PC)
+    "remote_port": 8765,
+    "remote_token": "",
+    # Auto-Clip
+    "autoclip_enabled": False,
+    "autoclip_source": "discord",     # discord | mic | any
+    "autoclip_db": -16.0,             # Schwelle in dBFS
+    "autoclip_after": 4,              # Sekunden nach dem lauten Moment noch mitnehmen
+    "autoclip_cooldown": 30,
+    # Sprach-Trigger
+    "triggers_enabled": False,
+    "trigger_lang": "auto",           # auto | de | en
+    # Video
+    "video_format": "9:16",
     # Oberflaeche
     "overlay_enabled": True,
     "overlay_corner": "top-right",
@@ -96,6 +116,7 @@ DEFAULTS: dict = {
         "voice_up": "ctrl+alt+page up",
         "voice_down": "ctrl+alt+page down",
         "voice_hold": "",
+        "random_sound": "",
     },
 }
 

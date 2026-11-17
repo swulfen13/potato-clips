@@ -29,8 +29,11 @@ def export_pack(lib, sound_ids: list[str], dest: str | Path) -> int:
                 continue
             arc = f"sounds/{len(items):03d}_{safe_name(s['name'])}{src.suffix.lower()}"
             z.write(src, arc)
-            items.append({"name": s["name"], "file": arc, "volume": float(s.get("volume", 1.0)),
-                          "color": s.get("color", "")})
+            item = {"name": s["name"], "file": arc, "volume": float(s.get("volume", 1.0)),
+                    "color": s.get("color", ""), "folder": s.get("folder", "")}
+            if s.get("trim"):
+                item["trim"] = list(s["trim"])
+            items.append(item)
         z.writestr("pack.json", json.dumps({"format": 1, "app": "Potato Clips", "sounds": items},
                                            indent=2, ensure_ascii=False))
     return len(items)
@@ -71,6 +74,13 @@ def import_pack(lib, src: str | Path) -> int:
                 col = str(item.get("color", ""))
                 if col.startswith("#") and len(col) in (4, 7):
                     e["color"] = col
+                e["folder"] = str(item.get("folder") or "")[:40]
+                try:
+                    t = item.get("trim")
+                    if t and len(t) == 2 and 0 <= float(t[0]) < float(t[1]):
+                        e["trim"] = [float(t[0]), float(t[1])]
+                except (TypeError, ValueError):
+                    pass
                 lib.sounds.append(e)
                 lib.save()
             n += 1

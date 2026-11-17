@@ -25,16 +25,22 @@ with open(version_file, "w", encoding="utf-8") as f:
     VarFileInfo([VarStruct('Translation', [1031, 1200])])])
 """)
 
+# Zusatzpakete: Spracherkennung (Vosk, DLLs im Paketordner) und ffmpeg (Video-Export)
+from PyInstaller.utils.hooks import collect_dynamic_libs
+import imageio_ffmpeg
+_ff = imageio_ffmpeg.get_ffmpeg_exe()
+extra_bins = collect_dynamic_libs("vosk") + [(_ff, os.path.join("imageio_ffmpeg", "binaries"))]
+
 a = Analysis(
     [os.path.join(ROOT, "app.py")],
     pathex=[ROOT],
     binaries=[
         (os.path.join(ROOT, "bin", "audiocap.exe"), "bin"),
         (os.path.join(ROOT, "bin", "rnnoise.dll"), "bin"),
-    ],
+    ] + extra_bins,
     datas=[(os.path.join(ROOT, "assets"), "assets"),
            (os.path.join(ROOT, "soundclip", "ui", "assets"), os.path.join("soundclip", "ui", "assets"))],
-    hiddenimports=["soundclip.fxworker"],
+    hiddenimports=["soundclip.fxworker", "vosk", "vosk.vosk_cffi", "_cffi_backend", "qrcode", "imageio_ffmpeg"],
     excludes=["tkinter", "matplotlib", "IPython", "pytest", "sounddevice", "pyrnnoise",
               "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
               "PySide6.QtQuick", "PySide6.QtQml", "PySide6.QtPdf", "PySide6.Qt3DCore", "PySide6.QtCharts",

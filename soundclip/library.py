@@ -13,6 +13,7 @@ import soundfile as sf
 from .capture import safe_name
 from .config import CLIPS_DIR, SOUNDS_DIR, SOUNDS_FILE, SR
 from .effects import apply_chain
+from .loudness import apply_trim, norm_gain, silence_bounds
 from .mixer import load_audio
 
 AUDIO_EXT = {".wav", ".mp3", ".ogg", ".flac", ".aiff", ".aif", ".opus"}
@@ -53,26 +54,34 @@ class SoundLibrary:
 
     def _new_entry(self, name: str, file: str) -> dict:
         return {"id": uuid.uuid4().hex[:10], "name": name, "file": file, "hotkey": "", "volume": 1.0,
-                "color": COLORS[len(self.sounds) % len(COLORS)]}
+                "color": COLORS[len(self.sounds) % len(COLORS)], "folder": "", "fav": False, "trigger": ""}
 
-    def add_file(self, src: str | Path) -> dict | None:
+    def add_file(self, src: str | Path, auto_trim: bool = False, folder: str = "") -> dict | None:
         src = Path(src)
         if src.suffix.lower() not in AUDIO_EXT or not src.exists():
             return None
-        load_audio(src)  # prueft, ob die Datei lesbar ist (wirft sonst)
+        data = load_audio(src)  # prueft, ob die Datei lesbar ist (wirft sonst)
         dst = _unique(SOUNDS_DIR / (safe_name(src.stem) + src.suffix.lower()))
         shutil.copy2(src, dst)
         with self.lock:
             e = self._new_entry(src.stem, dst.name)
+            e["folder"] = folder
+            if auto_trim:
+                b = silence_bounds(data)
+                if b:
+                    e["trim"] = list(b)
+            e["norm"] = norm_gain(apply_trim(data, e.get("trim")))
             self.sounds.append(e)
             self.save()
         return e
 
-    def add_array(self, name: str, data: np.ndarray) -> dict:
+    def add_array(self, name: str, data: np.ndarray, folder: str = "") -> dict:
         dst = _unique(SOUNDS_DIR / (safe_name(name) + ".wav"))
         sf.write(str(dst), np.clip(data, -1, 1), SR, subtype="PCM_16")
         with self.lock:
             e = self._new_entry(name, dst.name)
+            e["folder"] = folder
+            e["norm"] = norm_gain(data)
             self.sounds.append(e)
             self.save()
         return e
@@ -106,8 +115,60 @@ class SoundLibrary:
             self.sounds.insert(j, self.sounds.pop(i))
             self.save()
 
-    def audio(self, s: dict) -> np.ndarray:
+    def audio_raw(self, s: dict) -> np.ndarray:
+        """Die ganze Datei, ohne Zuschnitt."""
         return load_audio(self.path(s))
+
+    def audio(self, s: dict) -> np.ndarray:
+        """So wie er abgespielt wird: zugeschnitten."""
+        return apply_trim(load_audio(self.path(s)), s.get("trim"))
+
+    def set_trim(self, sid: str, trim) -> None:
+        """Zuschnitt setzen (None = ganze Datei) und die Lautheit neu messen."""
+        with self.lock:
+            s = self.get(sid)
+            if not s:
+                return
+            if trim:
+                s["trim"] = [round(float(trim[0]), 3), round(float(trim[1]), 3)]
+            else:
+                s.pop("trim", None)
+            s.pop("norm", None)
+        try:
+            data = self.audio(s)
+            with self.lock:
+                s["norm"] = norm_gain(data)
+        except Exception:
+            pass
+        self.save()
+
+    def gain_for(self, s: dict, data: np.ndarray | None, normalize: bool) -> float:
+        """Abspiel-Lautstaerke: eigene Lautstaerke x Angleichung (wird beim ersten Mal gemessen)."""
+        g = float(s.get("volume", 1.0))
+        if not normalize:
+            return g
+        n = s.get("norm")
+        if n is None and data is not None:
+            n = norm_gain(data)
+            with self.lock:
+                s["norm"] = n
+            self.save()
+        return g * float(n if n is not None else 1.0)
+
+    # ---- Ordner & Favoriten
+    def folders(self, extra=()) -> list[str]:
+        out: list[str] = []
+        for f in list(extra) + [s.get("folder", "") for s in self.sounds]:
+            if f and f not in out:
+                out.append(f)
+        return out
+
+    def rename_folder(self, old: str, new: str):
+        with self.lock:
+            for s in self.sounds:
+                if s.get("folder", "") == old:
+                    s["folder"] = new
+            self.save()
 
 
 class ClipLibrary:

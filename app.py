@@ -11,6 +11,24 @@ if __name__ == "__main__" and "--fxworker" in sys.argv:
     from soundclip.fxworker import main as _fx_main
     sys.exit(_fx_main())
 
+if __name__ == "__main__" and "--selftest" in sys.argv:
+    # Prueft im fertigen Build, ob alle mitgelieferten Teile da sind (fuer den Installer-Test, ohne Fenster/Ton)
+    _out = sys.argv[sys.argv.index("--selftest") + 1]
+    _res = {}
+    for _name, _fn in (("vosk", lambda: __import__("vosk").KaldiRecognizer),
+                       ("ffmpeg", lambda: __import__("os").path.getsize(__import__("imageio_ffmpeg").get_ffmpeg_exe())),
+                       ("qrcode", lambda: __import__("qrcode").QRCode().add_data("x")),
+                       ("remote", lambda: __import__("soundclip.remote").remote.lan_ip()),
+                       ("helper", lambda: __import__("soundclip.config").config.HELPER.exists() or 1 / 0)):
+        try:
+            _r = _fn()
+            _res[_name] = "ok " + str(_r if isinstance(_r, (int, str)) else "")
+        except Exception as _e:
+            _res[_name] = f"FEHLER {type(_e).__name__}: {_e}"
+    with open(_out, "w", encoding="utf-8") as _f:
+        __import__("json").dump(_res, _f)
+    sys.exit(0)
+
 import logging
 import os
 import time
