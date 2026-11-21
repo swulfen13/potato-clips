@@ -170,6 +170,11 @@ def list_output_devices() -> list[str]:
     return [d["name"] for d in _render_devices()]
 
 
+def _is_virtual(name: str) -> bool:
+    n = (name or "").upper()
+    return "CABLE" in n and "VB-AUDIO" in n or "VOICEMEETER" in n
+
+
 def _driver(name: str) -> str:
     """Text in der letzten Klammer, z. B. 'VB-Audio Virtual Cable' (bleibt auch nach Umbenennen gleich)."""
     if "(" in name and name.endswith(")"):
@@ -344,12 +349,18 @@ class Mixer:
             self._default_id = default["id"] if default else ""
             # Kopfhoerer / Lautsprecher
             mname = self.cfg["monitor_device"]
+            self._monitor_fallback = False
             if mname:
                 d = next((d for d in devs if d["name"] == mname), None)
                 if d is None:
-                    self.errors["monitor"] = f"„{mname}“ nicht gefunden – nutze Windows-Standard"
+                    # Kopfhoerer nicht da: Windows-Standard - aber nie das virtuelle Kabel, sonst hoerst du
+                    # nichts und Discord bekommt alles doppelt
+                    d = default if default and not _is_virtual(default["name"]) else \
+                        next((x for x in devs if not _is_virtual(x["name"])), None)
+                    self._monitor_fallback = True
+                    self.errors["monitor"] = (f"„{mname}“ nicht gefunden – nutze "
+                                              f"„{d['name'] if d else 'Windows-Standard'}“")
                     log.warning(self.errors["monitor"])
-                    d = default
                 want = (d["id"], d["name"]) if d else ("default", "Windows-Standard")
             else:
                 want = ("default", (default["name"] + " (Standard)") if default else "Windows-Standard")
@@ -405,8 +416,13 @@ class Mixer:
         """Vom Hintergrund-Thread aufgerufen: abgestuerzte Ausgaben neu starten,
         Windows-Standardgeraet gewechselt (z. B. Bluetooth-Kopfhoerer verbunden) -> umschalten."""
         default = next((d for d in devices if d.get("default")), None)
-        if default and default["id"] != self._default_id and not self.cfg["monitor_device"]:
+        fallback = getattr(self, "_monitor_fallback", False)
+        if default and default["id"] != self._default_id and (not self.cfg["monitor_device"] or fallback):
             log.info("Windows-Standardausgabe gewechselt -> %s", default["name"])
+            self.reopen(devices)
+            return
+        if fallback and any(d["name"] == self.cfg["monitor_device"] for d in devices):
+            log.info("Eingestellte Ausgabe wieder da -> %s", self.cfg["monitor_device"])
             self.reopen(devices)
             return
         vi = self.voicein

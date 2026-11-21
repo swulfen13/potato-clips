@@ -189,6 +189,30 @@ smx.devices["capture"] = caps + [{"id": "nothing-ear", "name": "Kopfhörer (Noth
 smx._check_mic()
 check("Mikro wieder da -> zurueck", smx.mixer.mic_effective == "nothing-ear" and smx.mixer.applied == 1)
 
+# ---- Kopfhoerer weg -> Ersatz-Ausgabe (nie das virtuelle Kabel), und zurueck wenn er wieder da ist
+from soundclip.mixer import Mixer  # noqa: E402
+
+cfgo = Config()
+cfgo["monitor_device"] = "Kopfhörer (Nothing Ear)"
+cfgo["virtual_device"] = "auto"
+mx = Mixer(cfgo)
+mx._open = lambda t: True
+mx.close = lambda: None
+mx.apply_voice_path = lambda: None
+devs = [{"id": "cab", "name": "CABLE Input (VB-Audio Virtual Cable)", "default": True},
+        {"id": "ow", "name": "Kopfhörer (OW810)", "default": False}]
+mx.reopen(devs)
+check("Kopfhoerer weg, Standard ist Kabel -> echte Ausgabe", mx._want["monitor"] == ("ow", "Kopfhörer (OW810)"),
+      str(mx._want["monitor"]))
+re_ = []
+mx.reopen = lambda d=None: re_.append(1)
+devs2 = [dict(devs[0], default=False), dict(devs[1], default=True)]
+mx.watchdog(devs2)
+check("Ersatz folgt dem Windows-Standard", re_ == [1])
+mx._default_id = "ow"
+mx.watchdog(devs2 + [{"id": "ne", "name": "Kopfhörer (Nothing Ear)", "default": False}])
+check("Kopfhoerer wieder da -> zurueck", re_ == [1, 1])
+
 print("ALLES OK" if ok else "ES GIBT FEHLER", flush=True)
 sys.stdout.flush()
 os._exit(0 if ok else 1)
