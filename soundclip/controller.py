@@ -86,6 +86,8 @@ class Controller(QObject):
                                       command=self.voiceCommand.emit, apps=self.app_labels)
         from .earguard import EarGuard
         self.guard = EarGuard(self.cfg, self._helper_cmd, self._duck_factor)
+        self.sources.on_mic_fallback = lambda name: self.toast.emit(
+            f"🎙 Eingestelltes Mikro nicht da – nutze „{name}“", "warn")
         self.sources.listeners = [self.guard.on_chunk, self.autoclip.on_chunk, self.triggers.on_chunk,
                                   self._activity]
         self.remote = RemoteServer(self)

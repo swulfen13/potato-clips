@@ -52,6 +52,7 @@ def setup_logging():
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8")] +
                  ([logging.StreamHandler()] if sys.stdout else []),
+        force=True,      # auch wenn beim Import schon jemand geloggt hat - sonst landet nichts mehr in der Datei
     )
 
 

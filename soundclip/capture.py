@@ -497,6 +497,25 @@ def _process_root(p: psutil.Process) -> int:
     return root
 
 
+
+def _is_cable(name: str) -> bool:
+    n = (name or "").upper()
+    return "CABLE OUTPUT" in n or "VB-AUDIO" in n or "VOICEMEETER" in n
+
+
+def pick_mic(want: str, capture: list[dict]) -> str:
+    """Welches Mikro wirklich benutzt wird: das eingestellte, wenn es da ist, sonst das Windows-Standard-Mikro
+    (aber nie ein virtuelles Kabel - das wuerde eine Rueckkopplung geben)."""
+    if not capture:
+        return want                                   # Liste noch nicht geladen -> nichts aendern
+    if want != "default" and any(d["id"] == want for d in capture):
+        return want
+    default = next((d for d in capture if d.get("default")), None)
+    if default and not _is_cable(default["name"]):
+        return "default" if want == "default" else default["id"]
+    real = next((d for d in capture if not _is_cable(d["name"])), None)
+    return real["id"] if real else want
+
 class SourceManager:
     def __init__(self, cfg: Config, mixer=None):
         self.cfg = cfg
@@ -571,6 +590,31 @@ class SourceManager:
             except Exception as e:
                 log.exception("manager loop: %s", e)
 
+    # ---------------------------------------------------------- Mikrofon weg? -> Ersatz
+    def _check_mic(self):
+        """Ist das eingestellte Mikro nicht angeschlossen (z. B. Bluetooth-Kopfhoerer aus), nimm das
+        Windows-Standard-Mikro - sonst kommt bei Discord gar nichts an. Nie das virtuelle Kabel selbst."""
+        eff = pick_mic(self.cfg["mic_device"] or "default", self.devices.get("capture", []))
+        old = getattr(self, "mic_effective", None)
+        if eff == old:
+            return
+        self.mic_effective = eff
+        mx = self.mixer
+        if mx is not None:
+            mx.mic_effective = eff
+            if old is not None:
+                try:
+                    mx.apply_voice_path()               # Live-Stimme sofort aufs neue Mikro umstellen
+                except Exception:
+                    log.exception("Mikro umstellen")
+        want = self.cfg["mic_device"] or "default"
+        if eff != want and want != "default":
+            name = next((d["name"] for d in self.devices["capture"] if d["id"] == eff), "Windows-Standard")
+            log.warning("Eingestelltes Mikrofon nicht gefunden -> %s", name)
+            cb = getattr(self, "on_mic_fallback", None)
+            if cb:
+                cb(name)
+
     # ---------------------------------------------------------- Scannen
     def refresh(self):
         if not HELPER.exists():
@@ -579,6 +623,7 @@ class SourceManager:
         data = run_helper_list()
         self.devices = {"capture": data.get("capture", []), "render": data.get("render", [])}
         self.sessions = data.get("sessions", [])
+        self._check_mic()
         own = os.getpid()
         ignore = {x.lower().strip() for x in self.cfg["ignore_apps"]} | {"audiocap.exe"}
         apps: dict[str, dict] = {}
@@ -625,7 +670,7 @@ class SourceManager:
         for pid in windowed_pids():
             add(pid, 1, False, True)
         avail: dict[str, dict] = {}
-        mic_id = self.cfg["mic_device"] or "default"
+        mic_id = getattr(self, "mic_effective", None) or self.cfg["mic_device"] or "default"
         mic_name = "Standard"
         for d in self.devices["capture"]:
             if (mic_id == "default" and d.get("default")) or d["id"] == mic_id:

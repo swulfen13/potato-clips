@@ -310,6 +310,7 @@ class Mixer:
         self.live_mon = LiveFifo()
         self.routes: dict[str, LiveFifo] = {}       # App-Quellen -> Discord
         self._limiter = None                         # Ohrenschutz fuer eigene Sounds auf dem Kopfhoerer
+        self.mic_effective: str | None = None        # tatsaechlich benutztes Mikro (Ersatz, wenn das eingestellte fehlt)
         self.route_levels: dict[str, float] = {}
         self.cleaner = None
         self.voicein: VoiceIn | None = None
@@ -555,7 +556,7 @@ class Mixer:
             host.command(f"voiceconf {int(mix)} {int(bool(self.cfg['clean_mic']))} "
                          f"{int(bool(self.cfg['clean_gate']))} {float(self.cfg['clean_strength']):.3f} {gain:.3f} "
                          f"{2 if fx else 0} {int(mon)} {float(self.cfg['voice_monitor_gain']):.3f}")
-            src = self.voice_source_override or (self.cfg["mic_device"] or "default")
+            src = self.voice_source_override or self.mic_effective or (self.cfg["mic_device"] or "default")
             if native:
                 vi = self.voicein
                 if vi is None or vi.ended or vi.source != src:

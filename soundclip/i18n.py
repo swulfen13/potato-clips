@@ -660,6 +660,7 @@ EN_PATTERNS += [(re.compile(a), b) for a, b in [
     (r"^Ordner: (.+)$", r"Folder: \1"),
     (r"^🎮 Profil: (.+)$", r"🎮 Profile: \1"),
     (r"^🎡 Aufs Sound-Rad gelegt: (.+)$", r"🎡 Added to sound wheel: \1"),
+    (r"^🎙 Eingestelltes Mikro nicht da – nutze „(.+)“$", r"🎙 Selected mic not found – using “\1”"),
     (r"^Schon auf dem Sound-Rad: (.+)$", r"Already on the sound wheel: \1"),
     (r"^(.+) ist voll – im Sound-Rad-Editor Platz machen$", r"\1 is full – make room in the sound wheel editor"),
     (r"^Seite (\d+)$", r"Page \1"),

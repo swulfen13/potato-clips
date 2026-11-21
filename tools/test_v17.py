@@ -153,6 +153,42 @@ for x in (w, w2, v):
     x.close()
     x.deleteLater()
 app.processEvents()
+# ---- Mikro weg -> Ersatz (nie das virtuelle Kabel)
+from soundclip.capture import pick_mic  # noqa: E402
+
+caps = [{"id": "cable", "name": "CABLE Output (VB-Audio Virtual Cable)", "default": False},
+        {"id": "ow", "name": "Kopfhörer (OW810)", "default": True},
+        {"id": "cam", "name": "Mikrofon (EMEET SmartCam Nova)", "default": False}]
+check("Mikro da -> bleibt", pick_mic("cam", caps) == "cam")
+check("Mikro weg -> Windows-Standard", pick_mic("nothing-ear", caps) == "ow")
+check("Standard bleibt Standard", pick_mic("default", caps) == "default")
+caps2 = [dict(caps[0], default=True), dict(caps[2])]
+check("Standard ist das Kabel -> echtes Mikro", pick_mic("weg", caps2) == "cam" and pick_mic("default", caps2) == "cam")
+check("Liste leer -> nichts aendern", pick_mic("x", []) == "x")
+from soundclip.config import Config  # noqa: E402
+from soundclip.capture import SourceManager  # noqa: E402
+
+
+class _Mix:
+    mic_effective = None
+    applied = 0
+
+    def apply_voice_path(self):
+        self.applied += 1
+
+
+cfgm = Config()
+cfgm["mic_device"] = "nothing-ear"
+smx = SourceManager.__new__(SourceManager)
+smx.cfg, smx.mixer, smx.devices = cfgm, _Mix(), {"capture": caps, "render": []}
+said = []
+smx.on_mic_fallback = said.append
+smx._check_mic()
+check("Ersatz-Mikro gemeldet", smx.mixer.mic_effective == "ow" and said == ["Kopfhörer (OW810)"], str(said))
+smx.devices["capture"] = caps + [{"id": "nothing-ear", "name": "Kopfhörer (Nothing Ear Hands-Free)"}]
+smx._check_mic()
+check("Mikro wieder da -> zurueck", smx.mixer.mic_effective == "nothing-ear" and smx.mixer.applied == 1)
+
 print("ALLES OK" if ok else "ES GIBT FEHLER", flush=True)
 sys.stdout.flush()
 os._exit(0 if ok else 1)
