@@ -171,8 +171,9 @@ def list_output_devices() -> list[str]:
 
 
 def _is_virtual(name: str) -> bool:
+    """Virtuelle Geraete, auf denen man selbst nichts hoert (Kabel, Steam-Streaming, Voicemeeter)."""
     n = (name or "").upper()
-    return "CABLE" in n and "VB-AUDIO" in n or "VOICEMEETER" in n
+    return ("CABLE" in n and "VB-AUDIO" in n) or "VOICEMEETER" in n or "STEAM STREAMING" in n
 
 
 def _driver(name: str) -> str:

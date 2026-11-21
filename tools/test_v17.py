@@ -200,13 +200,14 @@ mx._open = lambda t: True
 mx.close = lambda: None
 mx.apply_voice_path = lambda: None
 devs = [{"id": "cab", "name": "CABLE Input (VB-Audio Virtual Cable)", "default": True},
+        {"id": "steam", "name": "Lautsprecher (Steam Streaming Speakers)", "default": False},
         {"id": "ow", "name": "Kopfhörer (OW810)", "default": False}]
 mx.reopen(devs)
 check("Kopfhoerer weg, Standard ist Kabel -> echte Ausgabe", mx._want["monitor"] == ("ow", "Kopfhörer (OW810)"),
       str(mx._want["monitor"]))
 re_ = []
 mx.reopen = lambda d=None: re_.append(1)
-devs2 = [dict(devs[0], default=False), dict(devs[1], default=True)]
+devs2 = [dict(devs[0], default=False), dict(devs[1]), dict(devs[2], default=True)]
 mx.watchdog(devs2)
 check("Ersatz folgt dem Windows-Standard", re_ == [1])
 mx._default_id = "ow"
